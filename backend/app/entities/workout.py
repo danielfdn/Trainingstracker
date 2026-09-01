@@ -1,0 +1,73 @@
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.time import as_utc
+from app.entities.base import Base
+
+if TYPE_CHECKING:
+    from app.entities.set import Set
+    from app.entities.workout_plan import WorkoutPlan
+
+
+class Workout(Base):
+    """Eine einzelne, tatsaechlich stattgefundene Trainingseinheit."""
+
+    __tablename__ = "workout"
+    __table_args__ = (
+        # Die Regeln stehen zusaetzlich in der DB, nicht nur in Pydantic:
+        # so kann auch ein Skript oder DataGrip keinen unmoeglichen
+        # Zeitraum hinterlegen.
+        CheckConstraint(
+            "finished_at IS NULL OR started_at IS NOT NULL",
+            name="workout_finish_braucht_start",
+        ),
+        CheckConstraint(
+            "finished_at IS NULL OR finished_at >= started_at",
+            name="workout_ende_nach_start",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # timezone=True: speichert den Zeitpunkt eindeutig, unabhaengig davon,
+    # in welcher Zeitzone das iPhone gerade steht
+    date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    attended: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    # Beide bewusst nullable und getrennt von "date":
+    #   started_at is None                  -> Einheit noch nicht begonnen
+    #   started_at gesetzt, finished_at None -> laeuft gerade
+    #   beide gesetzt                        -> abgeschlossen, Dauer bekannt
+    # Eine ausgefallene Einheit (attended=False) hat schlicht keine Zeiten.
+    # Die Dauer wird NICHT gespeichert, sondern aus der Differenz berechnet -
+    # ein gespeicherter Wert koennte sonst von den Zeitstempeln abweichen.
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    workout_plan_id: Mapped[int] = mapped_column(
+        ForeignKey("workout_plan.id", ondelete="CASCADE"), nullable=False
+    )
+
+    workout_plan: Mapped["WorkoutPlan"] = relationship(back_populates="workouts")
+    # Die in dieser Einheit tatsaechlich absolvierten Saetze.
+    sets: Mapped[list["Set"]] = relationship(
+        back_populates="workout",
+        cascade="all, delete-orphan",
+    )
+
+    @property
+    def duration_seconds(self) -> int | None:
+        """Dauer der Einheit, oder None solange sie nicht abgeschlossen ist."""
+        if self.started_at is None or self.finished_at is None:
+            return None
+        return int((as_utc(self.finished_at) - as_utc(self.started_at)).total_seconds())
+
+    def __repr__(self) -> str:
+        return f"Workout(id={self.id!r}, date={self.date!r}, attended={self.attended!r})"

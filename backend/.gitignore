@@ -1,0 +1,6 @@
+# Backend-spezifische Artefakte (das Root-.gitignore deckt den Rest ab)
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
