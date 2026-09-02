@@ -1,0 +1,33 @@
+[project]
+name = "trainingstracker"
+version = "0.1.0"
+description = "Add your description here"
+authors = [
+    { name = "Daniel Fandin", email = "danielfandin28@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "alembic>=1.16.6",
+    "fastapi>=0.141.1",
+    "psycopg2-binary>=2.9.12",
+    "pydantic-settings>=2.13.1",
+    "python-dotenv>=1.2.3",
+    "sqlalchemy>=2.0.44",
+    "uvicorn>=0.52.4",
+]
+
+[tool.uv]
+# Kein installierbares Paket: der Code liegt unter backend/ und wird ueber
+# tool.pytest.ini_options.pythonpath bzw. "uv run" aus backend/ importiert.
+package = false
+
+[tool.pytest.ini_options]
+# macht "app" importierbar, ohne PYTHONPATH von Hand zu setzen
+pythonpath = ["backend"]
+testpaths = ["backend/tests"]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.12.0",
+    "pytest>=9.1.1",
+]
