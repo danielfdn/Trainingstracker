@@ -1,0 +1,38 @@
+import type { components } from './schema'
+
+/**
+ * Short names for the generated schemas.
+ *
+ * `components['schemas']['UserPublic']` everywhere would be unreadable, and it
+ * would also spread the generated file's shape across the whole codebase.
+ */
+type Schemas = components['schemas']
+
+export type User = Schemas['UserPublic']
+export type WorkoutPlan = Schemas['WorkoutPlanPublic']
+export type WorkoutPlanWithDays = Schemas['WorkoutPlanWithDays']
+export type TrainingDay = Schemas['TrainingDayPublic']
+export type Exercise = Schemas['ExercisePublic']
+export type Workout = Schemas['WorkoutPublic']
+export type ExerciseSet = Schemas['SetPublic']
+
+export type WorkoutLogEntry = Schemas['WorkoutLogEntry']
+export type MonthOption = Schemas['MonthOption']
+export type ProgressComparison = Schemas['ProgressComparison']
+export type ExerciseProgress = Schemas['ExerciseProgress']
+
+/**
+ * Weights are `Numeric` in the database, so Pydantic serialises them as JSON
+ * strings ("82.50"), never as numbers. Parse before doing arithmetic.
+ */
+export function toNumber(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined) return null
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+/** Formats a weight for display: "82.5 kg", or a dash when there is none. */
+export function formatWeight(value: string | number | null | undefined): string {
+  const parsed = toNumber(value)
+  return parsed === null ? '–' : `${parsed.toLocaleString('de-DE')} kg`
+}

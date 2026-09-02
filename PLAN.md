@@ -6,8 +6,10 @@ got to its current state; this file describes where it goes next.
 Written in English because that is the language we work in now. The existing
 German files (`UMBAU.md`, the code comments under `backend/app/`) stay German.
 
-**Status (2026-09-02):** Phases 1 and 2 done. 48 tests green, 41 endpoints,
-Postgres migrated to head (`ca67bbcf8314`), seed data rebuilt. No frontend yet.
+**Status (2026-09-02):** Phases 0 to 3 done. 48 tests green, 41 endpoints,
+Postgres migrated to head (`ca67bbcf8314`), seed data rebuilt. The frontend
+scaffold builds, talks to the API and renders the profile picker; the
+remaining screens are placeholders.
 
 ---
 
@@ -31,12 +33,11 @@ Postgres migrated to head (`ca67bbcf8314`), seed data rebuilt. No frontend yet.
 
 ---
 
-## Phase 0 — Commit what exists — still open
+## Phase 0 — Commit what exists ✅ done
 
-`pyproject.toml` and `uv.lock` are still untracked, so a fresh clone cannot
-install the project. Also still open from the last cleanup pass: `.DS_Store` and
-`__pycache__/main.cpython-314.pyc` are committed to git and should be removed
-and gitignored.
+`pyproject.toml` and `uv.lock` are tracked, so a fresh clone can install the
+project. `.DS_Store` and `__pycache__/main.cpython-314.pyc` were removed from
+git and added to `.gitignore` (commit `3f56bf5`).
 
 ---
 
@@ -179,18 +180,69 @@ case that returned nothing before phase 1.
 
 ---
 
-## Phase 3 — Frontend scaffold
+## Phase 3 — Frontend scaffold ✅ done
 
-Vite + React + TypeScript + Tailwind, dark and minimal, per the spec.
+Vite 8 + React 19 + TypeScript + Tailwind v4 under `frontend/`, dark and
+minimal per the spec. `npm run build`, `npm run typecheck` and `npm run lint`
+are all clean.
 
-- Generate a typed client from `/api/v1/openapi.json` (`openapi-typescript` +
-  `openapi-fetch`). Backend changes then become frontend compile errors instead
-  of runtime surprises.
-- TanStack Query for server state — caching, refetching, and optimistic set
-  entry during a live workout.
-- React Router.
-- Design tokens as CSS custom properties so dark stays one source of truth.
-- Add the Vite dev origin (`http://localhost:5173`) to `BACKEND_CORS_ORIGINS`.
+```
+frontend/src/
+├── api/
+│   ├── schema.d.ts       generated — do not edit by hand
+│   ├── client.ts         openapi-fetch client + unwrap()
+│   ├── queries.ts        one queryOptions per endpoint the app reads
+│   └── types.ts          short names for the generated schemas
+├── components/           AppShell, Placeholder, ui.tsx primitives
+├── lib/                  queryClient, useUserId
+├── pages/                ProfilePicker, MainMenu, NotFound, placeholders
+├── routes.tsx            the navigation below
+├── index.css             Tailwind + design tokens
+└── main.tsx
+```
+
+- **Typed client.** `src/api/schema.d.ts` is generated from the backend's own
+  OpenAPI document; `npm run gen:api` regenerates it against a running server.
+  A renamed field is now a compile error, not a runtime `undefined`.
+- **`unwrap()`** turns openapi-fetch's `{ data } | { error }` result into a
+  rejected promise, because TanStack Query needs a rejection to mark a query
+  as failed. FastAPI's `detail` — string or 422 list — becomes the message of
+  an `ApiError` carrying the status code.
+- **TanStack Query** with `refetchOnWindowFocus: false` (single local user, no
+  concurrent writers) and no retry below status 500 — a 404 will not become
+  correct by asking again.
+- **Design tokens** live in a Tailwind v4 `@theme` block in `index.css`:
+  surfaces, content, accent, feedback. Components use `bg-surface-raised`,
+  never a hex value, so the palette has one source of truth.
+- **Routing by id** (`/u/:userId`), with `useUserId()` throwing on a
+  non-numeric segment so it lands on the error element instead of firing a
+  request for `/api/v1/users/NaN`.
+- Mobile first: 44px minimum tap targets, `env(safe-area-inset-*)` padding,
+  `overscroll-behavior-y: none`, and `.tabular` so set numbers line up.
+
+Two things worth knowing:
+
+- **TypeScript is pinned to `~5.9`.** The Vite template ships TS 6, but
+  `openapi-typescript@7.13` still declares `peer typescript@^5.x`, so the
+  install fails on it. Pinning is reproducible; `--legacy-peer-deps` would
+  only have hidden the conflict until the next `npm install`.
+- **`BACKEND_CORS_ORIGINS` already contained `http://localhost:5173`**, so
+  nothing had to change on the backend. Verified with a preflight:
+  `access-control-allow-origin: http://localhost:5173`.
+
+`VITE_API_BASE_URL` (see `frontend/.env.example`) points at the backend and
+defaults to `http://127.0.0.1:8000`.
+
+Running it:
+
+```bash
+cd backend  && uv run uvicorn app.main:app --reload
+cd frontend && npm run dev          # http://localhost:5173
+```
+
+**Left for phase 4:** every screen except the profile picker and the main menu
+is a `Placeholder`. The routes exist so the navigation can be walked end to
+end.
 
 ---
 
@@ -231,10 +283,13 @@ verified as an installed app on the iPhone.
 
 ## Open questions
 
-1. **Rep range as a target only?** `target_reps_min`/`max` describe the plan. If
-   you log 6 reps against an 8-10 target, should the UI flag the miss, or record
-   it silently?
+None open.
 
-Answered on 2026-09-02: routing goes **by id** (`/u/3`) with the name only
-displayed, since `appuser.name` is not unique. Bodyweight progress shows **both**
-average reps and best-set reps.
+Answered on 2026-09-02:
+
+- Routing goes **by id** (`/u/3`) with the name only displayed, since
+  `appuser.name` is not unique.
+- Bodyweight progress shows **both** average reps and best-set reps.
+- **A rep range is a target, not a rule.** Logging 6 reps against an 8-10
+  target is recorded silently — no miss marker, no warning. The number stands
+  on its own; the progress view is what says whether things are moving.

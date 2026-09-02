@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+/* Design tokens.
+   One source of truth for the dark, minimal look from the spec. Components
+   never hard-code a hex value; they use these names, so a later light theme
+   (or a tweak to the accent) is a change in this block alone. */
+@theme {
+  /* Surfaces, from the page background upwards. */
+  --color-surface: #0b0d10;
+  --color-surface-raised: #14181d;
+  --color-surface-hover: #1b2027;
+  --color-border: #242a32;
+  --color-border-strong: #333b45;
+
+  /* Text, from loudest to quietest. */
+  --color-content: #e8eaed;
+  --color-content-muted: #9aa4b0;
+  --color-content-faint: #6b7481;
+
+  /* Accent — used for the primary action and the active state. */
+  --color-accent: #4f8cff;
+  --color-accent-hover: #6c9dff;
+  --color-accent-content: #06101f;
+
+  /* Feedback. */
+  --color-positive: #46c98b;
+  --color-negative: #f2555a;
+
+  --radius-card: 0.875rem;
+}
+
+@layer base {
+  html {
+    /* Keeps the layout clear of the iPhone notch and home indicator. */
+    padding: env(safe-area-inset-top) env(safe-area-inset-right)
+      env(safe-area-inset-bottom) env(safe-area-inset-left);
+    background-color: var(--color-surface);
+    color-scheme: dark;
+    /* No pull-to-refresh bounce while tapping through sets one-handed. */
+    overscroll-behavior-y: none;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-surface text-content antialiased;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0;
+    min-height: 100dvh;
+  }
+
+  /* Numbers in tables and set rows should line up column-wise. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-accent;
+  }
+}
