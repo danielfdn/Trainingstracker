@@ -6,8 +6,8 @@ got to its current state; this file describes where it goes next.
 Written in English because that is the language we work in now. The existing
 German files (`UMBAU.md`, the code comments under `backend/app/`) stay German.
 
-**Starting point (2026-09-02):** 27 tests green, 28 endpoints, Postgres migrated
-to head (`418fec70b608`), no frontend.
+**Status (2026-09-02):** Phases 1 and 2 done. 48 tests green, 41 endpoints,
+Postgres migrated to head (`ca67bbcf8314`), seed data rebuilt. No frontend yet.
 
 ---
 
@@ -21,10 +21,17 @@ to head (`418fec70b608`), no frontend.
 | Month boundaries | Calendar months, always starting on the 1st |
 | Month comparison | User picks both months from dropdowns |
 | Active plan | Nullable FK on `appuser`, not a flag on the plan |
+| Routing | By id (`/u/3`), name only displayed — names are not unique |
+| Bodyweight progress | Average reps *and* best-set reps |
+| Training days | A plan has N training days, each with a workout type ("Push") |
+| Plan targets | Each planned exercise carries target sets + a rep range |
+| Custom workouts | `training_day_id IS NULL`; excluded from analysis, shown in history |
+| Custom exercise picker | Pick from catalog, or type a new name that joins the catalog |
+| Workout picker | Lists the plan's training days ("Day 1 — Push"), plus Custom |
 
 ---
 
-## Phase 0 — Commit what exists
+## Phase 0 — Commit what exists — still open
 
 `pyproject.toml` and `uv.lock` are still untracked, so a fresh clone cannot
 install the project. Also still open from the last cleanup pass: `.DS_Store` and
@@ -33,7 +40,7 @@ and gitignored.
 
 ---
 
-## Phase 1 — Data model
+## Phase 1 — Data model ✅ done
 
 ### 1.1 Exercise becomes a per-user catalog
 
@@ -44,20 +51,48 @@ connects them. The comparison would silently return nothing for every exercise.
 
 ```
 appuser
-  ├─ exercise            (catalog, UNIQUE(user_id, title))
-  └─ workout_plan ──< plan_exercise >── exercise
-                                          ▲
-     workout ──< exercise_set >───────────┘
+  ├─ exercise                    (catalog, UNIQUE(user_id, title))
+  └─ workout_plan
+       └─< training_day          (position 1, type "Push")
+             └─< training_day_exercise >── exercise
+                                             ▲
+          workout ──< exercise_set >─────────┘
 ```
 
 - `exercise`: drop `workout_plan_id`, add `user_id` FK → `appuser` (CASCADE),
   `UNIQUE(user_id, title)`.
-- `plan_exercise`: `(workout_plan_id, exercise_id)` composite PK, plus a
-  `position` integer so a plan keeps its exercise order.
 - `exercise_set` is unchanged — it already points at both `exercise_id` and
   `workout_id`, which is exactly what the aggregation needs.
 
-### 1.2 Exactly one active plan
+### 1.2 Training days
+
+A plan is not a flat exercise list. It has N training days per week, each with a
+workout type such as "Push", "Pull" or "Legs", fixed when the plan is created.
+
+- `training_day`: `workout_plan_id` FK (CASCADE), `position` integer,
+  `workout_type` string. Free text, not an enum — splits vary too much
+  (Upper/Lower, Arms, Full Body) to hard-code a list.
+- `training_day_exercise`: `(training_day_id, exercise_id)` composite PK, plus
+  `position`, `target_sets`, `target_reps_min`, `target_reps_max`. This is where
+  "Bankdrücken 3×8-10" lives, so the live workout screen can show the target and
+  prefill that many set rows instead of making you type each one.
+- **Drop `workout_plan.training_days`.** The count is `COUNT(training_day)`;
+  keeping the integer as well allows a plan that claims 4 but has 3 days.
+
+### 1.3 Custom workouts
+
+`workout.training_day_id`, nullable FK → `training_day`, `ON DELETE SET NULL`.
+**`NULL` means custom** — no separate `is_custom` boolean. One column, one source
+of truth; with two you can store a row claiming to be custom while pointing at a
+training day.
+
+A custom workout is entered when equipment is missing: the user picks exercises
+freely (from the catalog, or types a new name which joins the catalog) and fills
+in sets, reps and weight. It behaves like a normal workout except that the
+analysis filters it out with `WHERE training_day_id IS NOT NULL`, while the
+history view shows it labelled "Custom".
+
+### 1.4 Exactly one active plan
 
 `appuser.active_workout_plan_id`, nullable, FK → `workout_plan`, `ON DELETE SET NULL`.
 
@@ -69,15 +104,28 @@ This creates a circular FK between `appuser` and `workout_plan`. Alembic needs
 `use_alter=True` on the constraint so it emits the `ALTER TABLE` after both
 tables exist instead of deadlocking on creation order.
 
-### 1.3 Migration and seed
+### 1.5 Migration and seed
 
-One Alembic revision covering both changes, then extend `backend/scripts/seed.py`
-so it produces a catalog, a plan referencing it, an active plan, and enough
-workouts across several months to exercise the comparison view.
+Revision `ca67bbcf8314` covers all of the above and round-trips (verified
+`upgrade` → `downgrade` → `upgrade` against Postgres). **No data migration:**
+the database held only seed data, so the revision empties `exercise` rather
+than guessing a `user_id` per row. `downgrade` empties it again, because the
+exercise → plan assignment cannot be reconstructed once it is gone.
+
+Two things the autogenerated draft got wrong and that were fixed by hand:
+`exercise.user_id` was added `NOT NULL` to a table that still had rows, and the
+new foreign keys were unnamed, so `downgrade`'s `drop_constraint(None, ...)`
+could never have run.
+
+`backend/scripts/seed.py` is rebuilt for the new model. It now produces a
+per-user catalog, plans with training days and targets, an active plan per
+user, a custom workout, and six months of history. Seed Ben deliberately keeps
+**one** "Bankdruecken" across two plans (62.5 kg in the old, 85.0 kg in the
+new) — the exact cross-plan case the comparison needs.
 
 ---
 
-## Phase 2 — Training log (the first service-layer code)
+## Phase 2 — Training log ✅ done
 
 This is the aggregation `UMBAU.md` §9.2 predicted would justify
 `app/services/`. It is not CRUD, so it does not belong in a router.
@@ -100,6 +148,10 @@ GET /api/v1/users/{id}/log/progress?month_a=2025-09&month_b=2026-04
 bodyweight), plus `set_count` and `session_count` for context. An exercise
 appears if it has sets in *either* month; the missing side is null.
 
+**Custom workouts are excluded** (`training_day_id IS NOT NULL`) — they are
+improvised around missing equipment, so their numbers would distort the trend.
+They still appear in `/log/workouts`, labelled "Custom".
+
 **Aggregate in Python, not in SQL.** `date_trunc` and `AT TIME ZONE` are
 Postgres-specific, and the test suite runs on in-memory SQLite. One user's
 training history is small enough that pulling the sets and bucketing them in the
@@ -107,11 +159,23 @@ service costs nothing and keeps the tests dialect-free.
 
 **Timezone matters here.** `workout.date` is `timestamptz`, so bucketing into
 calendar months needs a fixed zone — otherwise a Sunday-evening session lands in
-the wrong month depending on where it is read. Assumption: `Europe/Berlin`, as a
-setting in `app/core/config.py`.
+the wrong month depending on where it is read. Implemented as `settings.TIMEZONE`
+(`Europe/Berlin`) with `local_month`/`month_key` in `app/core/time.py`, and
+covered by a test: 2026-03-31 22:30 UTC is already April in Berlin and must
+report as `2026-04`.
+
+Also excluded: sessions with `attended=False`. A cancelled session should carry
+no sets, but the filter protects the average against ones entered after the fact.
 
 Weights are `Numeric`, so they arrive as `Decimal` and Pydantic serialises them
 as JSON strings. The frontend must parse rather than assume numbers.
+
+`ProgressComparison` also returns `excluded_custom_workouts`, so the log can
+explain why a session visible in the history is missing from the analysis.
+
+Verified against the seeded database: Seed Ben's Bankdrücken compares
+**11/2025 → 07/2026 as 62.50 → 80.00 kg (+17.50)** across a plan change — the
+case that returned nothing before phase 1.
 
 ---
 
@@ -140,15 +204,21 @@ Following the navigation in the spec:
 /:user/plans          plan list + create
 /:user/plans/:id      plan editor (catalog picker, ordering)
 /:user/active-plan    select the active plan
-/:user/workout        live workout: timer, exercise list, set entry
+/:user/workout        day picker (Day 1 — Push … | Custom)
+/:user/workout/:id    live workout: timer, exercise list, set entry
 /:user/log            history
 /:user/log/progress   month vs month comparison
 /:user/settings       edit user data
 ```
 
+Starting a workout first asks which training day is up today, listing the active
+plan's days by position and type, with "Custom" below the divider. Choosing a day
+prefills the screen from `training_day_exercise`; choosing Custom opens the free
+exercise picker instead.
+
 The live workout screen is the one that has to work well one-handed on a phone
-mid-set: large tap targets, numeric keypads, last session's numbers prefilled as
-the starting point.
+mid-set: large tap targets, numeric keypads, the target (3×8-10) visible, and
+last session's numbers prefilled as the starting point.
 
 ---
 
@@ -161,21 +231,10 @@ verified as an installed app on the iPhone.
 
 ## Open questions
 
-1. **Training days.** `workout_plan.training_days` is an integer, but exercises
-   hang off the plan as one flat list. If a 4-day plan means push/pull/legs/arms
-   with different exercises per day, the model cannot express that today, and
-   starting a workout would need to ask *which day*. Is `training_days` just a
-   weekly target count, or a real split that needs modelling?
+1. **Rep range as a target only?** `target_reps_min`/`max` describe the plan. If
+   you log 6 reps against an 8-10 target, should the UI flag the miss, or record
+   it silently?
 
-2. **Existing data during the exercise migration.** Does the database hold
-   training data worth keeping? If it is only seed data, the migration can
-   recreate the tables. If not, it needs a data migration that derives `user_id`
-   from each exercise's plan, deduplicates by title, and rewrites
-   `exercise_set.exercise_id` to the surviving rows.
-
-3. **Routing by name.** The spec shows `/tom`, but `appuser.name` has no unique
-   constraint, so two users named Tom would collide. Add `UNIQUE(name)`, or route
-   by id and merely display the name?
-
-4. **Bodyweight progress.** Pull-ups have no weight, so their only progress
-   signal is reps. Is average reps enough, or should best-set reps show too?
+Answered on 2026-09-02: routing goes **by id** (`/u/3`) with the name only
+displayed, since `appuser.name` is not unique. Bodyweight progress shows **both**
+average reps and best-set reps.

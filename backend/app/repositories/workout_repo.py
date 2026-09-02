@@ -46,6 +46,41 @@ class WorkoutRepo(BaseRepo[Workout]):
         statement = statement.order_by(Workout.date.desc()).offset(skip).limit(limit)
         return list(self.session.scalars(statement).all())
 
+    def list_for_log(self, user_id: int, *, skip: int = 0, limit: int = 100) -> list[Workout]:
+        """Historie fuers Trainingslog - mit allem, was die Liste anzeigt.
+
+        selectinload laedt Trainingstag, Plan und Saetze gleich mit: ohne das
+        wuerde die Liste pro Zeile drei Nachfragen ausloesen (N+1).
+        """
+        statement = (
+            select(Workout)
+            .join(WorkoutPlan, Workout.workout_plan_id == WorkoutPlan.id)
+            .where(WorkoutPlan.user_id == user_id)
+            .options(
+                selectinload(Workout.training_day),
+                selectinload(Workout.workout_plan),
+                selectinload(Workout.sets),
+            )
+            .order_by(Workout.date.desc(), Workout.id.desc())
+            .offset(skip)
+            .limit(limit)
+        )
+        return list(self.session.scalars(statement).all())
+
+    def dates_by_user(self, user_id: int) -> list[datetime]:
+        """Nur die Zeitpunkte - Grundlage fuer die Monatsliste der Auswertung.
+
+        Bewusst ohne limit: es sind ein paar hundert Zeilen pro User, und die
+        Monatsliste muss vollstaendig sein, sonst fehlen Eintraege im Dropdown.
+        """
+        statement = (
+            select(Workout.date)
+            .join(WorkoutPlan, Workout.workout_plan_id == WorkoutPlan.id)
+            .where(WorkoutPlan.user_id == user_id)
+            .order_by(Workout.date.desc())
+        )
+        return list(self.session.scalars(statement).all())
+
     def get_with_sets(self, id: int) -> Workout | None:
         """Einheit samt absolvierter Saetze - eine Query statt N+1."""
         statement = (

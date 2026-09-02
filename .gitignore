@@ -219,3 +219,6 @@ __marimo__/
 
 .env
 ROADMAP.md
+
+# macOS
+.DS_Store

@@ -18,7 +18,17 @@ from app.schemas.exercise import (
     ExerciseWithSets,
 )
 from app.schemas.set import SetCreate, SetPublic, SetUpdate
-from app.schemas.user import UserCreate, UserPublic, UserUpdate
+from app.schemas.training_day import (
+    TrainingDayCreate,
+    TrainingDayExerciseCreate,
+    TrainingDayExercisePublic,
+    TrainingDayExerciseUpdate,
+    TrainingDayNested,
+    TrainingDayPublic,
+    TrainingDayUpdate,
+    TrainingDayWithExercises,
+)
+from app.schemas.user import ActivePlanUpdate, UserCreate, UserPublic, UserUpdate
 from app.schemas.workout import (
     WorkoutCreate,
     WorkoutPublic,
@@ -29,10 +39,11 @@ from app.schemas.workout_plan import (
     WorkoutPlanCreate,
     WorkoutPlanPublic,
     WorkoutPlanUpdate,
-    WorkoutPlanWithExercises,
+    WorkoutPlanWithDays,
 )
 
 __all__ = [
+    "ActivePlanUpdate",
     "ExerciseCreate",
     "ExercisePublic",
     "ExerciseUpdate",
@@ -40,6 +51,14 @@ __all__ = [
     "SetCreate",
     "SetPublic",
     "SetUpdate",
+    "TrainingDayCreate",
+    "TrainingDayExerciseCreate",
+    "TrainingDayExercisePublic",
+    "TrainingDayExerciseUpdate",
+    "TrainingDayNested",
+    "TrainingDayPublic",
+    "TrainingDayUpdate",
+    "TrainingDayWithExercises",
     "UserCreate",
     "UserPublic",
     "UserUpdate",
@@ -50,5 +69,5 @@ __all__ = [
     "WorkoutPlanCreate",
     "WorkoutPlanPublic",
     "WorkoutPlanUpdate",
-    "WorkoutPlanWithExercises",
+    "WorkoutPlanWithDays",
 ]

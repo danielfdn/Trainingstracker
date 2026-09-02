@@ -31,6 +31,9 @@ class WorkoutBase(BaseModel):
 
 class WorkoutCreate(WorkoutBase):
     workout_plan_id: int
+    # None = freies Training ("Custom"): der User stellt sich die Uebungen
+    # selbst zusammen, weil z.B. Geraete fehlen.
+    training_day_id: int | None = None
 
 
 class WorkoutUpdate(BaseModel):
@@ -42,6 +45,7 @@ class WorkoutUpdate(BaseModel):
     comment: str | None = Field(default=None, max_length=2000)
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    training_day_id: int | None = None
 
 
 class WorkoutPublic(WorkoutBase):
@@ -49,6 +53,13 @@ class WorkoutPublic(WorkoutBase):
 
     id: int
     workout_plan_id: int
+    training_day_id: int | None = None
+
+    @computed_field
+    @property
+    def is_custom(self) -> bool:
+        """Freies Training - erscheint in der Historie, nicht in der Auswertung."""
+        return self.training_day_id is None
 
     @computed_field
     @property

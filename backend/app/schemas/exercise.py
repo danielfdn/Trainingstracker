@@ -9,7 +9,9 @@ class ExerciseBase(BaseModel):
 
 
 class ExerciseCreate(ExerciseBase):
-    workout_plan_id: int
+    # Uebungen gehoeren zum User, nicht zum Plan - so bleiben sie ueber
+    # Planwechsel hinweg dieselbe Uebung und damit vergleichbar.
+    user_id: int
 
 
 class ExerciseUpdate(BaseModel):
@@ -21,7 +23,7 @@ class ExercisePublic(ExerciseBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    workout_plan_id: int
+    user_id: int
 
 
 class ExerciseWithSets(ExercisePublic):

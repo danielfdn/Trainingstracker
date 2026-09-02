@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     # vergessen zu beenden und wird automatisch geschlossen.
     MAX_WORKOUT_HOURS: int = 6
 
+    # Zeitzone, in der Kalendermonate geschnitten werden. workout.date ist
+    # timestamptz - ohne feste Zone wuerde eine Sonntagabend-Einheit je nach
+    # Betrachter in einen anderen Monat fallen und der Vergleich waere nicht
+    # reproduzierbar.
+    TIMEZONE: str = "Europe/Berlin"
+
     DB_HOST: str = "localhost"
     DB_PORT: int = 5432
     DB_NAME: str = "trainingstracker"

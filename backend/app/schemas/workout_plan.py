@@ -1,13 +1,12 @@
 from datetime import date
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
-from app.schemas.exercise import ExerciseWithSets
+from app.schemas.training_day import TrainingDayNested, TrainingDayWithExercises
 
 
 class WorkoutPlanBase(BaseModel):
     title: str = Field(min_length=1, max_length=100)
-    training_days: int = Field(gt=0, le=7)
     starting_date: date | None = None
     ending_date: date | None = None
 
@@ -24,11 +23,20 @@ class WorkoutPlanBase(BaseModel):
 
 class WorkoutPlanCreate(WorkoutPlanBase):
     user_id: int
+    # Die Trainingstage lassen sich gleich mitschicken - beim Anlegen eines
+    # Plans legt man ohnehin fest, an wie vielen Tagen was trainiert wird.
+    training_days: list[TrainingDayNested] = []
+
+    @model_validator(mode="after")
+    def check_positions_einmalig(self):
+        positionen = [tag.position for tag in self.training_days]
+        if len(positionen) != len(set(positionen)):
+            raise ValueError("zwei Trainingstage teilen sich dieselbe position")
+        return self
 
 
 class WorkoutPlanUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=100)
-    training_days: int | None = Field(default=None, gt=0, le=7)
     starting_date: date | None = None
     ending_date: date | None = None
 
@@ -40,7 +48,13 @@ class WorkoutPlanPublic(WorkoutPlanBase):
     user_id: int
 
 
-class WorkoutPlanWithExercises(WorkoutPlanPublic):
-    """Plan inklusive seiner Uebungen - fuer die Detailansicht in der PWA."""
+class WorkoutPlanWithDays(WorkoutPlanPublic):
+    """Plan inklusive Trainingstage und deren Uebungen - Detailansicht der PWA."""
 
-    exercises: list[ExerciseWithSets] = []
+    training_days: list[TrainingDayWithExercises] = []
+
+    @computed_field
+    @property
+    def training_days_per_week(self) -> int:
+        """Abgeleitet aus der Anzahl der Tage, nicht separat gespeichert."""
+        return len(self.training_days)

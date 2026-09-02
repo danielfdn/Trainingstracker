@@ -1,6 +1,11 @@
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import ExerciseRepoDep, SetRepoDep, WorkoutRepoDep
+from app.api.deps import (
+    ExerciseRepoDep,
+    SetRepoDep,
+    WorkoutPlanRepoDep,
+    WorkoutRepoDep,
+)
 from app.entities.set import Set
 from app.schemas.set import SetCreate, SetPublic, SetUpdate
 
@@ -13,6 +18,7 @@ def create_set(
     repo: SetRepoDep,
     exercise_repo: ExerciseRepoDep,
     workout_repo: WorkoutRepoDep,
+    plan_repo: WorkoutPlanRepoDep,
 ) -> Set:
     """Protokolliert einen absolvierten Satz innerhalb einer Trainingseinheit."""
     exercise = exercise_repo.get(set_in.exercise_id)
@@ -25,16 +31,19 @@ def create_set(
         raise HTTPException(
             status_code=404, detail=f"Workout {set_in.workout_id} nicht gefunden"
         )
-    # Ein Satz gehoert zu einer Uebung UND zu einer Einheit. Beide haengen an
-    # einem Plan - wenn das nicht derselbe ist, waere der Satz widerspruechlich
-    # (z.B. Bankdruecken aus Plan A, protokolliert in einer Einheit von Plan B).
-    if exercise.workout_plan_id != workout.workout_plan_id:
+    # Die Uebung gehoert jetzt zum User, nicht mehr zum Plan - genau das
+    # macht den Vergleich ueber Planwechsel hinweg moeglich. Geprueft wird
+    # deshalb, ob Uebung und Einheit demselben User gehoeren: ein Satz mit
+    # Bankdruecken von Anna, protokolliert in Bens Einheit, waere Unsinn.
+    # Ein freies Training (training_day_id=None) darf jede eigene Uebung
+    # enthalten - das ist der Sinn der Sache.
+    plan = plan_repo.get(workout.workout_plan_id)
+    if plan is not None and exercise.user_id != plan.user_id:
         raise HTTPException(
             status_code=422,
             detail=(
-                f"Uebung '{exercise.title}' gehoert zu Plan "
-                f"{exercise.workout_plan_id}, das Workout aber zu Plan "
-                f"{workout.workout_plan_id}"
+                f"Uebung '{exercise.title}' gehoert zu User {exercise.user_id}, "
+                f"das Workout aber zu User {plan.user_id}"
             ),
         )
     # Fachliche Regel: eine Uebung ohne Zusatzgewicht darf kein Gewicht tragen.

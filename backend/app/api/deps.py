@@ -15,9 +15,11 @@ from sqlalchemy.orm import Session
 from app.core.db import SessionLocal
 from app.repositories.exercise_repo import ExerciseRepo
 from app.repositories.set_repo import SetRepo
+from app.repositories.training_day_repo import TrainingDayRepo
 from app.repositories.user_repo import UserRepo
 from app.repositories.workout_plan_repo import WorkoutPlanRepo
 from app.repositories.workout_repo import WorkoutRepo
+from app.services.training_log import TrainingLogService
 
 
 def get_session() -> Generator[Session, None, None]:
@@ -52,8 +54,18 @@ def get_set_repo(session: SessionDep) -> SetRepo:
     return SetRepo(session)
 
 
+def get_training_day_repo(session: SessionDep) -> TrainingDayRepo:
+    return TrainingDayRepo(session)
+
+
 def get_workout_repo(session: SessionDep) -> WorkoutRepo:
     return WorkoutRepo(session)
+
+
+def get_training_log_service(session: SessionDep) -> TrainingLogService:
+    """Der Service bekommt Repos, nicht die Session - so bleibt die
+    Auswertung von der Datenbank entkoppelt und im Test austauschbar."""
+    return TrainingLogService(WorkoutRepo(session), SetRepo(session))
 
 
 # Abkuerzungen, damit die Endpunkte kurz bleiben:
@@ -62,4 +74,6 @@ UserRepoDep = Annotated[UserRepo, Depends(get_user_repo)]
 WorkoutPlanRepoDep = Annotated[WorkoutPlanRepo, Depends(get_workout_plan_repo)]
 ExerciseRepoDep = Annotated[ExerciseRepo, Depends(get_exercise_repo)]
 SetRepoDep = Annotated[SetRepo, Depends(get_set_repo)]
+TrainingDayRepoDep = Annotated[TrainingDayRepo, Depends(get_training_day_repo)]
 WorkoutRepoDep = Annotated[WorkoutRepo, Depends(get_workout_repo)]
+TrainingLogServiceDep = Annotated[TrainingLogService, Depends(get_training_log_service)]

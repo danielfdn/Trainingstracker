@@ -15,10 +15,37 @@ def _create_user(client: TestClient) -> int:
 
 def _create_plan(client: TestClient, user_id: int) -> int:
     response = client.post(
-        "/api/v1/workout-plans",
-        json={"title": "Push/Pull", "training_days": 4, "user_id": user_id},
+        "/api/v1/workout-plans", json={"title": "Push/Pull", "user_id": user_id}
     )
     assert response.status_code == 201
+    return response.json()["id"]
+
+
+def _create_exercise(
+    client: TestClient, user_id: int, title: str, *, weighted: bool = True
+) -> int:
+    """Uebungen haengen am User, nicht am Plan - deshalb reicht die user_id."""
+    response = client.post(
+        "/api/v1/exercises",
+        json={"title": title, "weighted": weighted, "user_id": user_id},
+    )
+    assert response.status_code == 201
+    return response.json()["id"]
+
+
+def _create_training_day(
+    client: TestClient, plan_id: int, position: int, workout_type: str, exercises=None
+) -> int:
+    response = client.post(
+        "/api/v1/training-days",
+        json={
+            "workout_plan_id": plan_id,
+            "position": position,
+            "workout_type": workout_type,
+            "exercises": exercises or [],
+        },
+    )
+    assert response.status_code == 201, response.text
     return response.json()["id"]
 
 
@@ -66,41 +93,39 @@ def test_ungueltige_eingabe_gibt_422(client: TestClient) -> None:
 def test_plan_fuer_unbekannten_user_gibt_404_statt_500(client: TestClient) -> None:
     response = client.post(
         "/api/v1/workout-plans",
-        json={"title": "Plan", "training_days": 3, "user_id": 9999},
+        json={"title": "Plan", "user_id": 9999},
     )
     assert response.status_code == 404
 
 
-def test_plan_detail_enthaelt_uebungen_und_saetze(client: TestClient) -> None:
+def test_plan_detail_enthaelt_trainingstage_mit_vorgaben(client: TestClient) -> None:
     user_id = _create_user(client)
     plan_id = _create_plan(client, user_id)
-    workout_id = _create_workout(client, plan_id)
-    exercise_id = client.post(
-        "/api/v1/exercises",
-        json={"title": "Bankdruecken", "weighted": True, "workout_plan_id": plan_id},
-    ).json()["id"]
-    client.post(
-        "/api/v1/sets",
-        json={
-            "repetitions": 8,
-            "weight": 60,
-            "exercise_id": exercise_id,
-            "workout_id": workout_id,
-        },
+    exercise_id = _create_exercise(client, user_id, "Bankdruecken")
+    _create_training_day(
+        client,
+        plan_id,
+        1,
+        "Push",
+        [{"exercise_id": exercise_id, "target_sets": 3, "target_reps_min": 8, "target_reps_max": 10}],
     )
 
     plan = client.get(f"/api/v1/workout-plans/{plan_id}").json()
-    assert plan["exercises"][0]["title"] == "Bankdruecken"
-    assert plan["exercises"][0]["sets"][0]["repetitions"] == 8
+    assert plan["training_days_per_week"] == 1
+    tag = plan["training_days"][0]
+    assert tag["workout_type"] == "Push"
+    vorgabe = tag["exercise_links"][0]
+    assert vorgabe["exercise"]["title"] == "Bankdruecken"
+    assert vorgabe["target_sets"] == 3
+    assert (vorgabe["target_reps_min"], vorgabe["target_reps_max"]) == (8, 10)
 
 
 def test_workout_detail_enthaelt_protokollierte_saetze(client: TestClient) -> None:
     user_id = _create_user(client)
     plan_id = _create_plan(client, user_id)
-    exercise_id = client.post(
-        "/api/v1/exercises",
-        json={"title": "Kniebeuge", "weighted": True, "workout_plan_id": plan_id},
-    ).json()["id"]
+    exercise_id = _create_exercise(
+        client, user_id, "Kniebeuge", weighted=True
+    )
 
     montag = _create_workout(client, plan_id)
     for gewicht in (60, 65):
@@ -126,10 +151,9 @@ def test_satz_ohne_workout_wird_abgelehnt(client: TestClient) -> None:
     """Ein Satz braucht zwingend eine Einheit - das ist der Kern des Modells."""
     user_id = _create_user(client)
     plan_id = _create_plan(client, user_id)
-    exercise_id = client.post(
-        "/api/v1/exercises",
-        json={"title": "Kniebeuge", "weighted": True, "workout_plan_id": plan_id},
-    ).json()["id"]
+    exercise_id = _create_exercise(
+        client, user_id, "Kniebeuge", weighted=True
+    )
 
     ohne = client.post(
         "/api/v1/sets", json={"repetitions": 8, "weight": 60, "exercise_id": exercise_id}
@@ -148,26 +172,53 @@ def test_satz_ohne_workout_wird_abgelehnt(client: TestClient) -> None:
     assert unbekannt.status_code == 404
 
 
-def test_satz_aus_fremdem_plan_wird_abgelehnt(client: TestClient) -> None:
-    user_id = _create_user(client)
-    plan_a = _create_plan(client, user_id)
-    plan_b = _create_plan(client, user_id)
-    exercise_a = client.post(
-        "/api/v1/exercises",
-        json={"title": "Bankdruecken", "weighted": True, "workout_plan_id": plan_a},
+def test_satz_mit_fremder_uebung_wird_abgelehnt(client: TestClient) -> None:
+    """Uebungen gehoeren dem User - Annas Bankdruecken in Bens Einheit waere Unsinn."""
+    anna = _create_user(client)
+    ben = client.post(
+        "/api/v1/users", json={"name": "Ben", "age": 34, "weight": 82.0}
     ).json()["id"]
-    workout_b = _create_workout(client, plan_b)
+    annas_uebung = _create_exercise(client, anna, "Bankdruecken")
+    bens_workout = _create_workout(client, _create_plan(client, ben))
 
     response = client.post(
         "/api/v1/sets",
         json={
             "repetitions": 8,
             "weight": 60,
-            "exercise_id": exercise_a,
-            "workout_id": workout_b,
+            "exercise_id": annas_uebung,
+            "workout_id": bens_workout,
         },
     )
     assert response.status_code == 422
+
+
+def test_dieselbe_uebung_in_zwei_plaenen(client: TestClient) -> None:
+    """Der Kern des Katalogs: eine Uebung ueberlebt den Planwechsel.
+
+    Waere die Uebung an den Plan gebunden, haette sie hier zwei ids - und der
+    Monatsvergleich ueber den Planwechsel hinweg faende nichts zu vergleichen.
+    """
+    user_id = _create_user(client)
+    alter_plan = _create_plan(client, user_id)
+    neuer_plan = _create_plan(client, user_id)
+    bank = _create_exercise(client, user_id, "Bankdruecken")
+
+    for plan_id in (alter_plan, neuer_plan):
+        workout_id = _create_workout(client, plan_id)
+        antwort = client.post(
+            "/api/v1/sets",
+            json={
+                "repetitions": 8,
+                "weight": 60,
+                "exercise_id": bank,
+                "workout_id": workout_id,
+            },
+        )
+        assert antwort.status_code == 201
+
+    saetze = client.get(f"/api/v1/sets?exercise_id={bank}").json()
+    assert len(saetze) == 2
 
 
 def test_satz_mit_gewicht_bei_koerpergewichtsuebung_abgelehnt(
@@ -175,10 +226,9 @@ def test_satz_mit_gewicht_bei_koerpergewichtsuebung_abgelehnt(
 ) -> None:
     user_id = _create_user(client)
     plan_id = _create_plan(client, user_id)
-    exercise_id = client.post(
-        "/api/v1/exercises",
-        json={"title": "Klimmzuege", "weighted": False, "workout_plan_id": plan_id},
-    ).json()["id"]
+    exercise_id = _create_exercise(
+        client, user_id, "Klimmzuege", weighted=False
+    )
 
     workout_id = _create_workout(client, plan_id)
 
@@ -379,3 +429,233 @@ def test_frische_einheit_wird_nicht_geschlossen(client: TestClient) -> None:
     laeuft = client.get(f"/api/v1/workouts/{workout_id}").json()
     assert laeuft["is_running"] is True
     assert laeuft["finished_at"] is None
+
+
+# --- Aktiver Plan ----------------------------------------------------------
+
+
+def test_genau_ein_aktiver_plan(client: TestClient) -> None:
+    """Die Auswahl ersetzt sich selbst - zwei aktive Plaene sind unmoeglich."""
+    user_id = _create_user(client)
+    sommer = _create_plan(client, user_id)
+    herbst = _create_plan(client, user_id)
+
+    assert client.get(f"/api/v1/users/{user_id}").json()["active_workout_plan_id"] is None
+    # Ohne Auswahl gibt es keinen aktiven Plan zu laden.
+    assert client.get(f"/api/v1/users/{user_id}/active-plan").status_code == 404
+
+    client.put(f"/api/v1/users/{user_id}/active-plan", json={"workout_plan_id": sommer})
+    assert client.get(f"/api/v1/users/{user_id}").json()["active_workout_plan_id"] == sommer
+
+    client.put(f"/api/v1/users/{user_id}/active-plan", json={"workout_plan_id": herbst})
+    assert client.get(f"/api/v1/users/{user_id}").json()["active_workout_plan_id"] == herbst
+    assert client.get(f"/api/v1/users/{user_id}/active-plan").json()["id"] == herbst
+
+    # null hebt die Auswahl wieder auf
+    client.put(f"/api/v1/users/{user_id}/active-plan", json={"workout_plan_id": None})
+    assert client.get(f"/api/v1/users/{user_id}").json()["active_workout_plan_id"] is None
+
+
+def test_fremder_plan_kann_nicht_aktiv_gesetzt_werden(client: TestClient) -> None:
+    anna = _create_user(client)
+    ben = client.post(
+        "/api/v1/users", json={"name": "Ben", "age": 34, "weight": 82.0}
+    ).json()["id"]
+    bens_plan = _create_plan(client, ben)
+
+    response = client.put(
+        f"/api/v1/users/{anna}/active-plan", json={"workout_plan_id": bens_plan}
+    )
+    assert response.status_code == 422
+
+
+# --- Trainingstage ---------------------------------------------------------
+
+
+def test_plan_mit_trainingstagen_in_einem_request(client: TestClient) -> None:
+    user_id = _create_user(client)
+    bank = _create_exercise(client, user_id, "Bankdruecken")
+    kniebeuge = _create_exercise(client, user_id, "Kniebeuge")
+
+    plan_id = client.post(
+        "/api/v1/workout-plans",
+        json={
+            "title": "Push/Pull/Legs",
+            "user_id": user_id,
+            "training_days": [
+                {
+                    "position": 1,
+                    "workout_type": "Push",
+                    "exercises": [{"exercise_id": bank, "target_sets": 3}],
+                },
+                {
+                    "position": 2,
+                    "workout_type": "Legs",
+                    "exercises": [{"exercise_id": kniebeuge, "target_sets": 4}],
+                },
+            ],
+        },
+    ).json()["id"]
+
+    plan = client.get(f"/api/v1/workout-plans/{plan_id}").json()
+    assert plan["training_days_per_week"] == 2
+    assert [tag["workout_type"] for tag in plan["training_days"]] == ["Push", "Legs"]
+
+
+def test_position_ist_je_plan_einmalig(client: TestClient) -> None:
+    user_id = _create_user(client)
+    plan_id = _create_plan(client, user_id)
+    _create_training_day(client, plan_id, 1, "Push")
+
+    doppelt = client.post(
+        "/api/v1/training-days",
+        json={"workout_plan_id": plan_id, "position": 1, "workout_type": "Pull"},
+    )
+    assert doppelt.status_code == 409
+
+
+def test_gleicher_typ_zweimal_ist_erlaubt(client: TestClient) -> None:
+    """Ein 4er-Split darf zweimal "Push" enthalten - mit anderen Uebungen."""
+    user_id = _create_user(client)
+    plan_id = _create_plan(client, user_id)
+    _create_training_day(client, plan_id, 1, "Push")
+    zweiter = client.post(
+        "/api/v1/training-days",
+        json={"workout_plan_id": plan_id, "position": 2, "workout_type": "Push"},
+    )
+    assert zweiter.status_code == 201
+
+
+def test_vorgabe_laesst_sich_aendern(client: TestClient) -> None:
+    user_id = _create_user(client)
+    plan_id = _create_plan(client, user_id)
+    bank = _create_exercise(client, user_id, "Bankdruecken")
+    tag = _create_training_day(client, plan_id, 1, "Push")
+
+    client.post(
+        f"/api/v1/training-days/{tag}/exercises",
+        json={"exercise_id": bank, "target_sets": 3, "target_reps_min": 8, "target_reps_max": 10},
+    )
+    geaendert = client.patch(
+        f"/api/v1/training-days/{tag}/exercises/{bank}",
+        json={"target_sets": 4, "target_reps_min": 6, "target_reps_max": 8},
+    )
+    assert geaendert.status_code == 200
+    assert geaendert.json()["target_sets"] == 4
+
+    # verdrehte Spanne wird abgelehnt
+    kaputt = client.patch(
+        f"/api/v1/training-days/{tag}/exercises/{bank}",
+        json={"target_reps_min": 12, "target_reps_max": 5},
+    )
+    assert kaputt.status_code == 422
+
+
+def test_uebung_steht_pro_tag_nur_einmal(client: TestClient) -> None:
+    user_id = _create_user(client)
+    plan_id = _create_plan(client, user_id)
+    bank = _create_exercise(client, user_id, "Bankdruecken")
+    tag = _create_training_day(client, plan_id, 1, "Push")
+
+    assert (
+        client.post(
+            f"/api/v1/training-days/{tag}/exercises", json={"exercise_id": bank}
+        ).status_code
+        == 201
+    )
+    assert (
+        client.post(
+            f"/api/v1/training-days/{tag}/exercises", json={"exercise_id": bank}
+        ).status_code
+        == 409
+    )
+
+
+# --- Custom-Workouts -------------------------------------------------------
+
+
+def test_workout_ohne_trainingstag_ist_custom(client: TestClient) -> None:
+    user_id = _create_user(client)
+    plan_id = _create_plan(client, user_id)
+    tag = _create_training_day(client, plan_id, 1, "Push")
+
+    geplant = client.post(
+        "/api/v1/workouts",
+        json={
+            "date": "2026-08-31T10:00:00Z",
+            "workout_plan_id": plan_id,
+            "training_day_id": tag,
+        },
+    ).json()
+    assert geplant["is_custom"] is False
+
+    frei = client.post(
+        "/api/v1/workouts",
+        json={"date": "2026-08-31T10:00:00Z", "workout_plan_id": plan_id},
+    ).json()
+    assert frei["is_custom"] is True
+    assert frei["training_day_id"] is None
+
+
+def test_trainingstag_aus_fremdem_plan_wird_abgelehnt(client: TestClient) -> None:
+    user_id = _create_user(client)
+    plan_a = _create_plan(client, user_id)
+    plan_b = _create_plan(client, user_id)
+    tag_a = _create_training_day(client, plan_a, 1, "Push")
+
+    response = client.post(
+        "/api/v1/workouts",
+        json={
+            "date": "2026-08-31T10:00:00Z",
+            "workout_plan_id": plan_b,
+            "training_day_id": tag_a,
+        },
+    )
+    assert response.status_code == 422
+
+
+# --- Uebungskatalog --------------------------------------------------------
+
+
+def test_doppelter_uebungsname_wird_abgelehnt(client: TestClient) -> None:
+    """Zwei "Bankdruecken" wuerden den Verlauf in zwei Haelften zerlegen."""
+    user_id = _create_user(client)
+    _create_exercise(client, user_id, "Bankdruecken")
+
+    doppelt = client.post(
+        "/api/v1/exercises",
+        json={"title": "Bankdruecken", "weighted": True, "user_id": user_id},
+    )
+    assert doppelt.status_code == 409
+
+    # auch mit anderer Schreibweise
+    anders = client.post(
+        "/api/v1/exercises",
+        json={"title": "bankdruecken", "weighted": True, "user_id": user_id},
+    )
+    assert anders.status_code == 409
+
+    # ein anderer User darf denselben Namen haben
+    ben = client.post(
+        "/api/v1/users", json={"name": "Ben", "age": 34, "weight": 82.0}
+    ).json()["id"]
+    assert (
+        client.post(
+            "/api/v1/exercises",
+            json={"title": "Bankdruecken", "weighted": True, "user_id": ben},
+        ).status_code
+        == 201
+    )
+
+
+def test_katalog_filterbar_nach_user_und_plan(client: TestClient) -> None:
+    user_id = _create_user(client)
+    bank = _create_exercise(client, user_id, "Bankdruecken")
+    _create_exercise(client, user_id, "Kniebeuge")
+    plan_id = _create_plan(client, user_id)
+    _create_training_day(client, plan_id, 1, "Push", [{"exercise_id": bank}])
+
+    assert len(client.get(f"/api/v1/exercises?user_id={user_id}").json()) == 2
+    # Der Plan kennt nur die Uebung, die auch auf einem seiner Tage steht.
+    im_plan = client.get(f"/api/v1/exercises?workout_plan_id={plan_id}").json()
+    assert [u["title"] for u in im_plan] == ["Bankdruecken"]

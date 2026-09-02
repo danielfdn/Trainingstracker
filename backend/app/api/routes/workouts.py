@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import WorkoutPlanRepoDep, WorkoutRepoDep
+from app.api.deps import TrainingDayRepoDep, WorkoutPlanRepoDep, WorkoutRepoDep
 from app.core.config import settings
 from app.core.time import as_utc
 from app.entities.workout import Workout
@@ -29,13 +29,39 @@ def _vergessene_schliessen(repo) -> None:
 
 @router.post("", response_model=WorkoutPublic, status_code=status.HTTP_201_CREATED)
 def create_workout(
-    workout_in: WorkoutCreate, repo: WorkoutRepoDep, plan_repo: WorkoutPlanRepoDep
+    workout_in: WorkoutCreate,
+    repo: WorkoutRepoDep,
+    plan_repo: WorkoutPlanRepoDep,
+    day_repo: TrainingDayRepoDep,
 ) -> Workout:
+    """Legt eine Einheit an.
+
+    Mit training_day_id wird ein geplanter Tag trainiert ("Push"), ohne sie
+    ein freies Training - z.B. wenn im Hotel die Geraete fehlen. Freie
+    Einheiten stehen in der Historie, zaehlen aber nicht in die Auswertung.
+    """
     if plan_repo.get(workout_in.workout_plan_id) is None:
         raise HTTPException(
             status_code=404,
             detail=f"Trainingsplan {workout_in.workout_plan_id} nicht gefunden",
         )
+    if workout_in.training_day_id is not None:
+        tag = day_repo.get(workout_in.training_day_id)
+        if tag is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Trainingstag {workout_in.training_day_id} nicht gefunden",
+            )
+        # Sonst koennte eine Einheit von Plan A den "Push"-Tag aus Plan B
+        # tragen - die Auswertung wuerde die Einheit dem falschen Plan zuordnen.
+        if tag.workout_plan_id != workout_in.workout_plan_id:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Trainingstag {tag.id} gehoert zu Plan {tag.workout_plan_id}, "
+                    f"die Einheit aber zu Plan {workout_in.workout_plan_id}"
+                ),
+            )
     return repo.create(Workout(**workout_in.model_dump()))
 
 

@@ -26,3 +26,12 @@ class UserPublic(UserBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    # Nur lesbar: gesetzt wird der aktive Plan ueber PUT /users/{id}/active-plan,
+    # damit die Existenz des Plans geprueft werden kann.
+    active_workout_plan_id: int | None = None
+
+
+class ActivePlanUpdate(BaseModel):
+    """Body fuer PUT /users/{id}/active-plan. None hebt die Auswahl auf."""
+
+    workout_plan_id: int | None = None

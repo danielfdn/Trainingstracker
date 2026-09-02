@@ -9,6 +9,7 @@ from app.entities.base import Base
 
 if TYPE_CHECKING:
     from app.entities.set import Set
+    from app.entities.training_day import TrainingDay
     from app.entities.workout_plan import WorkoutPlan
 
 
@@ -54,13 +55,26 @@ class Workout(Base):
     workout_plan_id: Mapped[int] = mapped_column(
         ForeignKey("workout_plan.id", ondelete="CASCADE"), nullable=False
     )
+    # NULL bedeutet: freies Training ("Custom"), z.B. weil im Urlaubshotel
+    # die Geraete fehlten. Bewusst kein zusaetzliches is_custom-Flag - zwei
+    # Spalten koennten sich widersprechen (custom=True und trotzdem ein Tag).
+    # Die Auswertung filtert diese Einheiten heraus, die Historie zeigt sie.
+    training_day_id: Mapped[int | None] = mapped_column(
+        ForeignKey("training_day.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     workout_plan: Mapped["WorkoutPlan"] = relationship(back_populates="workouts")
+    training_day: Mapped["TrainingDay | None"] = relationship(back_populates="workouts")
     # Die in dieser Einheit tatsaechlich absolvierten Saetze.
     sets: Mapped[list["Set"]] = relationship(
         back_populates="workout",
         cascade="all, delete-orphan",
     )
+
+    @property
+    def is_custom(self) -> bool:
+        """Freies Training ohne Vorgabe - zaehlt nicht in die Auswertung."""
+        return self.training_day_id is None
 
     @property
     def duration_seconds(self) -> int | None:

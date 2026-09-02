@@ -9,8 +9,19 @@ das komplette Schema sieht.
 from app.entities.base import Base
 from app.entities.exercise import Exercise
 from app.entities.set import Set
+from app.entities.training_day import TrainingDay
+from app.entities.training_day_exercise import TrainingDayExercise
 from app.entities.user import User
 from app.entities.workout import Workout
 from app.entities.workout_plan import WorkoutPlan
 
-__all__ = ["Base", "Exercise", "Set", "User", "Workout", "WorkoutPlan"]
+__all__ = [
+    "Base",
+    "Exercise",
+    "Set",
+    "TrainingDay",
+    "TrainingDayExercise",
+    "User",
+    "Workout",
+    "WorkoutPlan",
+]

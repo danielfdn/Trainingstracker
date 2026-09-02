@@ -5,13 +5,19 @@ Aufruf aus dem Ordner backend/:
 
 Das Skript ist wiederholbar: Es loescht vorher genau die User aus SEED_USERS
 und legt sie neu an. Durch die Cascade-Beziehungen verschwinden dabei auch
-deren Plaene, Uebungen, Workouts und Saetze. Daten, die nicht von diesem
-Skript stammen, bleiben unangetastet.
+deren Katalog, Plaene, Trainingstage, Workouts und Saetze. Daten, die nicht
+von diesem Skript stammen, bleiben unangetastet.
 
-Datenmodell-Hinweis: Ein Satz haengt an einer Uebung UND an einem Workout.
-Er beschreibt also nicht die Planvorgabe, sondern was an einem konkreten Tag
-tatsaechlich gemacht wurde. Deshalb entstehen die Saetze hier immer aus einem
-Workout heraus.
+Datenmodell-Hinweise:
+  - Eine Uebung gehoert dem USER, nicht dem Plan. Nur deshalb laesst sich der
+    Verlauf ueber einen Planwechsel hinweg vergleichen.
+  - Ein Satz haengt an einer Uebung UND an einem Workout. Er beschreibt also
+    nicht die Vorgabe, sondern was an einem konkreten Tag gemacht wurde.
+  - Die Vorgabe ("3x8-10") steht in TrainingDayExercise.
+  - Ein Workout ohne training_day_id ist ein freies Training ("Custom").
+
+Die Daten sind bewusst ueber mehrere Monate verteilt, damit der
+Monatsvergleich der Auswertung etwas zu vergleichen hat.
 """
 
 from datetime import date, datetime, timedelta, timezone
@@ -19,7 +25,15 @@ from datetime import date, datetime, timedelta, timezone
 from sqlalchemy import select
 
 from app.core.db import SessionLocal
-from app.entities import Exercise, Set, User, Workout, WorkoutPlan
+from app.entities import (
+    Exercise,
+    Set,
+    TrainingDay,
+    TrainingDayExercise,
+    User,
+    Workout,
+    WorkoutPlan,
+)
 
 # Namen, die dieses Skript verwaltet - dienen zugleich als Wiedererkennung
 # beim erneuten Lauf.
@@ -29,21 +43,47 @@ SEED_USERS = ["Seed Anna", "Seed Ben", "Seed Clara"]
 TODAY = date.today()
 
 
-def _dt(days_ago: int, hour: int = 18) -> datetime:
-    """Zeitpunkt vor n Tagen, als aware datetime (die Spalte ist timezone=True)."""
-    day = TODAY - timedelta(days=days_ago)
-    return datetime(day.year, day.month, day.day, hour, tzinfo=timezone.utc)
+def _monat(vor_monaten: int) -> date:
+    """Der Erste des Monats, der n Monate zurueckliegt.
+
+    Monate sind Kalendermonate und beginnen immer am Ersten - genau so
+    schneidet die Auswertung sie spaeter zu.
+    """
+    monat_index = TODAY.year * 12 + (TODAY.month - 1) - vor_monaten
+    return date(monat_index // 12, monat_index % 12 + 1, 1)
 
 
-def _zeiten(days_ago: int, minuten: int, hour: int = 18) -> dict:
-    """Start-/Endzeit einer abgeschlossenen Einheit mit gegebener Dauer."""
-    start = _dt(days_ago, hour)
-    return {"started_at": start, "finished_at": start + timedelta(minutes=minuten)}
+def _dt(tag: date, hour: int = 18) -> datetime:
+    """Zeitpunkt als aware datetime (die Spalte ist timezone=True)."""
+    return datetime(tag.year, tag.month, tag.day, hour, tzinfo=timezone.utc)
+
+
+def _einheit(
+    tag: date, minuten: int, *, training_day: TrainingDay | None = None, comment: str = ""
+) -> Workout:
+    """Eine abgeschlossene Einheit mit gegebener Dauer.
+
+    training_day=None ergibt ein freies Training ("Custom").
+    """
+    start = _dt(tag)
+    return Workout(
+        date=start,
+        attended=True,
+        comment=comment,
+        started_at=start,
+        finished_at=start + timedelta(minutes=minuten),
+        training_day=training_day,
+    )
 
 
 def clear(session) -> int:
     """Entfernt die vom Skript angelegten User samt allem, was daran haengt."""
     users = session.scalars(select(User).where(User.name.in_(SEED_USERS))).all()
+    for user in users:
+        # Erst die Auswahl loesen: appuser zeigt auf workout_plan und
+        # umgekehrt - ohne das haenge der Fremdschluessel beim Loeschen.
+        user.active_workout_plan_id = None
+    session.flush()
     for user in users:
         session.delete(user)
     session.commit()
@@ -51,132 +91,214 @@ def clear(session) -> int:
 
 
 def seed(session) -> None:
-    # --- User 1: Ganzkoerperplan mit Verlauf ueber vier Wochen ------------
+    # --- User 1: durchgehender Verlauf ueber fuenf Monate -----------------
+    # Der interessante Fall fuer die Auswertung: dieselbe Uebung, viele
+    # Monate, steigende Gewichte.
     anna = User(name="Seed Anna", age=27, weight=64.5)
-    anna_plan = WorkoutPlan(
-        title="Ganzkoerper 3er-Split",
-        training_days=3,
-        starting_date=TODAY - timedelta(days=28),
-        ending_date=TODAY + timedelta(days=56),
-    )
+
     kniebeuge = Exercise(title="Kniebeuge", weighted=True)
     bank = Exercise(title="Bankdruecken", weighted=True)
     klimmzug = Exercise(title="Klimmzuege", weighted=False)
-    anna_plan.exercises = [kniebeuge, bank, klimmzug]
+    rudern = Exercise(title="Rudern am Kabelzug", weighted=True)
+    anna.exercises = [kniebeuge, bank, klimmzug, rudern]
 
-    # Drei absolvierte Einheiten mit steigenden Gewichten - daraus laesst
-    # sich im Frontend ein Verlauf zeichnen.
-    for days_ago, squat, bench, pullups, minuten, comment in [
-        (21, 60.0, 35.0, 5, 72, "Erster Tag, Technik geuebt"),
-        (14, 65.0, 37.5, 6, 65, "Kniebeuge +5 kg"),
-        (2, 70.0, 40.0, 7, 58, "Gut gelaufen"),
-    ]:
-        einheit = Workout(
-            date=_dt(days_ago),
-            attended=True,
-            comment=comment,
-            **_zeiten(days_ago, minuten),
-        )
-        einheit.sets = [
-            Set(exercise=kniebeuge, repetitions=8, weight=squat),
-            Set(exercise=kniebeuge, repetitions=8, weight=squat),
-            Set(exercise=kniebeuge, repetitions=6, weight=squat + 5),
-            Set(exercise=bank, repetitions=10, weight=bench),
-            Set(exercise=bank, repetitions=8, weight=bench + 2.5),
-            Set(exercise=klimmzug, repetitions=pullups, weight=None),
-            Set(exercise=klimmzug, repetitions=pullups - 1, weight=None),
+    anna_plan = WorkoutPlan(
+        title="Push/Pull/Legs",
+        starting_date=_monat(5),
+        ending_date=None,
+    )
+    push = TrainingDay(position=1, workout_type="Push")
+    push.exercise_links = [
+        TrainingDayExercise(
+            exercise=bank, position=1, target_sets=3, target_reps_min=8, target_reps_max=10
+        ),
+    ]
+    pull = TrainingDay(position=2, workout_type="Pull")
+    pull.exercise_links = [
+        TrainingDayExercise(
+            exercise=klimmzug, position=1, target_sets=3, target_reps_min=5, target_reps_max=8
+        ),
+        TrainingDayExercise(
+            exercise=rudern, position=2, target_sets=3, target_reps_min=10, target_reps_max=12
+        ),
+    ]
+    legs = TrainingDay(position=3, workout_type="Legs")
+    legs.exercise_links = [
+        TrainingDayExercise(
+            exercise=kniebeuge, position=1, target_sets=4, target_reps_min=5, target_reps_max=8
+        ),
+    ]
+    anna_plan.training_days = [push, pull, legs]
+
+    # Fuenf Monate Verlauf: pro Monat ein Push- und ein Legs-Tag, mit
+    # steigenden Gewichten. Damit hat der Vergleich "Monat A gegen Monat B"
+    # in jedem Monat Zahlen.
+    for vor_monaten in range(5, -1, -1):
+        fortschritt = 5 - vor_monaten
+        monatsanfang = _monat(vor_monaten)
+
+        push_tag = monatsanfang + timedelta(days=3)
+        legs_tag = monatsanfang + timedelta(days=10)
+        pull_tag = monatsanfang + timedelta(days=17)
+        # Der laufende Monat ist noch nicht vorbei - keine Termine in der Zukunft.
+        if push_tag > TODAY:
+            continue
+
+        push_einheit = _einheit(push_tag, 58, training_day=push)
+        push_einheit.sets = [
+            Set(exercise=bank, repetitions=10, weight=35.0 + fortschritt * 2.5),
+            Set(exercise=bank, repetitions=9, weight=35.0 + fortschritt * 2.5),
+            Set(exercise=bank, repetitions=8, weight=37.5 + fortschritt * 2.5),
         ]
-        anna_plan.workouts.append(einheit)
+        anna_plan.workouts.append(push_einheit)
+
+        if legs_tag <= TODAY:
+            legs_einheit = _einheit(legs_tag, 65, training_day=legs)
+            legs_einheit.sets = [
+                Set(exercise=kniebeuge, repetitions=8, weight=60.0 + fortschritt * 5),
+                Set(exercise=kniebeuge, repetitions=8, weight=60.0 + fortschritt * 5),
+                Set(exercise=kniebeuge, repetitions=6, weight=65.0 + fortschritt * 5),
+            ]
+            anna_plan.workouts.append(legs_einheit)
+
+        if pull_tag <= TODAY:
+            pull_einheit = _einheit(pull_tag, 52, training_day=pull)
+            pull_einheit.sets = [
+                Set(exercise=klimmzug, repetitions=5 + fortschritt, weight=None),
+                Set(exercise=klimmzug, repetitions=4 + fortschritt, weight=None),
+                Set(exercise=rudern, repetitions=12, weight=40.0 + fortschritt * 2.5),
+            ]
+            anna_plan.workouts.append(pull_einheit)
+
+    # Ein freies Training: im Urlaub fehlten die Geraete. Steht in der
+    # Historie, faellt aber aus der Auswertung heraus.
+    custom = _einheit(
+        _monat(1) + timedelta(days=22),
+        35,
+        comment="Hotel ohne Langhantel - improvisiert",
+    )
+    custom.sets = [
+        Set(exercise=klimmzug, repetitions=8, weight=None),
+        Set(exercise=klimmzug, repetitions=7, weight=None),
+    ]
+    anna_plan.workouts.append(custom)
 
     # Eine ausgefallene Einheit - ohne Saetze, weil nichts stattgefunden hat.
     anna_plan.workouts.append(
-        Workout(date=_dt(7), attended=False, comment="Krank ausgefallen")
+        Workout(
+            date=_dt(TODAY - timedelta(days=5)),
+            attended=False,
+            comment="Krank ausgefallen",
+            training_day=push,
+        )
     )
     anna.workout_plans = [anna_plan]
 
-    # --- User 2: abgeschlossener alter Plan + laufender neuer Plan --------
+    # --- User 2: Planwechsel bei gleichem Uebungskatalog ------------------
+    # Genau der Fall, fuer den die Uebungen am User haengen: Bankdruecken
+    # kommt in beiden Plaenen vor und bleibt dieselbe Uebung, sodass sich
+    # 09/25 mit 04/26 vergleichen laesst.
     ben = User(name="Seed Ben", age=34, weight=82.0)
+    ben_bank = Exercise(title="Bankdruecken", weighted=True)
+    ben_kreuzheben = Exercise(title="Kreuzheben", weighted=True)
+    ben_schulter = Exercise(title="Schulterdruecken", weighted=True)
+    ben_liegestuetz = Exercise(title="Liegestuetze", weighted=False)
+    ben.exercises = [ben_bank, ben_kreuzheben, ben_schulter, ben_liegestuetz]
 
-    ben_old = WorkoutPlan(
+    ben_alt = WorkoutPlan(
         title="Grundlagenaufbau",
-        training_days=2,
-        starting_date=TODAY - timedelta(days=180),
-        ending_date=TODAY - timedelta(days=90),
+        starting_date=_monat(11),
+        ending_date=_monat(7),
     )
-    rudern = Exercise(title="Rudern am Kabelzug", weighted=True)
-    ben_old.exercises = [rudern]
-    for days_ago, gewicht, minuten in [(150, 40.0, 45), (120, 45.0, 50)]:
-        einheit = Workout(
-            date=_dt(days_ago),
-            attended=True,
-            comment="",
-            **_zeiten(days_ago, minuten),
-        )
+    alt_tag = TrainingDay(position=1, workout_type="Ganzkoerper")
+    alt_tag.exercise_links = [
+        TrainingDayExercise(exercise=ben_bank, position=1, target_sets=3, target_reps_min=10, target_reps_max=12),
+        TrainingDayExercise(exercise=ben_kreuzheben, position=2, target_sets=3, target_reps_min=5, target_reps_max=5),
+    ]
+    ben_alt.training_days = [alt_tag]
+    for vor_monaten in (10, 9, 8):
+        tag = _monat(vor_monaten) + timedelta(days=6)
+        einheit = _einheit(tag, 48, training_day=alt_tag)
         einheit.sets = [
-            Set(exercise=rudern, repetitions=12, weight=gewicht),
-            Set(exercise=rudern, repetitions=12, weight=gewicht),
+            Set(exercise=ben_bank, repetitions=12, weight=60.0),
+            Set(exercise=ben_bank, repetitions=10, weight=62.5),
+            Set(exercise=ben_kreuzheben, repetitions=5, weight=100.0),
         ]
-        ben_old.workouts.append(einheit)
+        ben_alt.workouts.append(einheit)
 
-    ben_new = WorkoutPlan(
-        title="Push/Pull/Legs",
-        training_days=4,
-        starting_date=TODAY - timedelta(days=10),
+    ben_neu = WorkoutPlan(
+        title="Oberkoerper/Unterkoerper",
+        starting_date=_monat(2),
         ending_date=None,
     )
-    kreuzheben = Exercise(title="Kreuzheben", weighted=True)
-    schulter = Exercise(title="Schulterdruecken", weighted=True)
-    liegestuetz = Exercise(title="Liegestuetze", weighted=False)
-    beinpresse = Exercise(title="Beinpresse", weighted=True)
-    ben_new.exercises = [kreuzheben, schulter, liegestuetz, beinpresse]
+    ober = TrainingDay(position=1, workout_type="Oberkoerper")
+    ober.exercise_links = [
+        TrainingDayExercise(exercise=ben_bank, position=1, target_sets=4, target_reps_min=6, target_reps_max=8),
+        TrainingDayExercise(exercise=ben_schulter, position=2, target_sets=3, target_reps_min=8, target_reps_max=10),
+        TrainingDayExercise(exercise=ben_liegestuetz, position=3, target_sets=3, target_reps_min=15, target_reps_max=20),
+    ]
+    unter = TrainingDay(position=2, workout_type="Unterkoerper")
+    unter.exercise_links = [
+        TrainingDayExercise(exercise=ben_kreuzheben, position=1, target_sets=4, target_reps_min=3, target_reps_max=5),
+    ]
+    ben_neu.training_days = [ober, unter]
+    for vor_monaten in (2, 1):
+        tag = _monat(vor_monaten) + timedelta(days=8)
+        einheit = _einheit(tag, 55, training_day=ober)
+        einheit.sets = [
+            # Dieselbe Uebung wie im alten Plan, deutlich schwerer - der
+            # Vergleich alt gegen neu ist der Kern der Auswertung.
+            Set(exercise=ben_bank, repetitions=8, weight=75.0 + (2 - vor_monaten) * 5),
+            Set(exercise=ben_bank, repetitions=6, weight=80.0 + (2 - vor_monaten) * 5),
+            Set(exercise=ben_schulter, repetitions=10, weight=32.5),
+            Set(exercise=ben_liegestuetz, repetitions=20, weight=None),
+        ]
+        ben_neu.workouts.append(einheit)
 
-    w1 = Workout(date=_dt(8), attended=True, comment="Einstieg", **_zeiten(8, 55))
-    w1.sets = [
-        Set(exercise=kreuzheben, repetitions=5, weight=100.0),
-        Set(exercise=kreuzheben, repetitions=5, weight=105.0),
-        Set(exercise=schulter, repetitions=10, weight=30.0),
-    ]
-    w2 = Workout(date=_dt(5), attended=True, comment="", **_zeiten(5, 41))
-    w2.sets = [
-        Set(exercise=liegestuetz, repetitions=20, weight=None),
-        Set(exercise=liegestuetz, repetitions=18, weight=None),
-        Set(exercise=beinpresse, repetitions=12, weight=140.0),
-    ]
     # Bewusst ohne finished_at: deckt den Zustand "laeuft gerade" ab, den das
     # Frontend mit laufender Uhr darstellen muss. Der Start liegt absichtlich
     # nur wenige Minuten zurueck - laege er weiter als MAX_WORKOUT_HOURS
     # zurueck, wuerde die Einheit beim ersten Lesen automatisch geschlossen.
-    w3 = Workout(
-        date=_dt(0),
+    laufend = Workout(
+        date=_dt(TODAY),
         attended=True,
-        comment="Kreuzheben PR bei 120 kg",
+        comment="Laeuft gerade",
         started_at=datetime.now(timezone.utc) - timedelta(minutes=40),
+        training_day=unter,
     )
-    w3.sets = [
-        Set(exercise=kreuzheben, repetitions=5, weight=110.0),
-        Set(exercise=kreuzheben, repetitions=3, weight=120.0),
-        Set(exercise=schulter, repetitions=8, weight=32.5),
+    laufend.sets = [
+        Set(exercise=ben_kreuzheben, repetitions=5, weight=110.0),
+        Set(exercise=ben_kreuzheben, repetitions=3, weight=120.0),
     ]
-    ben_new.workouts = [w1, w2, w3]
-    ben.workout_plans = [ben_old, ben_new]
+    ben_neu.workouts.append(laufend)
+    ben.workout_plans = [ben_alt, ben_neu]
 
     # --- User 3: frisch angelegter Plan, noch kein einziges Training ------
     # Bewusst ohne Workouts - damit deckt der Seed auch den Leerfall ab,
     # den das Frontend anzeigen koennen muss.
     clara = User(name="Seed Clara", age=41, weight=58.0)
+    clara_kniebeuge = Exercise(title="Kniebeuge ohne Gewicht", weighted=False)
+    clara_plank = Exercise(title="Plank (Sekunden als Wiederholungen)", weighted=False)
+    clara.exercises = [clara_kniebeuge, clara_plank]
     clara_plan = WorkoutPlan(
-        title="Einstieg Koerpergewicht",
-        training_days=2,
-        starting_date=TODAY,
-        ending_date=None,
+        title="Einstieg Koerpergewicht", starting_date=TODAY, ending_date=None
     )
-    clara_plan.exercises = [
-        Exercise(title="Kniebeuge ohne Gewicht", weighted=False),
-        Exercise(title="Plank (Sekunden als Wiederholungen)", weighted=False),
+    clara_tag = TrainingDay(position=1, workout_type="Ganzkoerper")
+    clara_tag.exercise_links = [
+        TrainingDayExercise(exercise=clara_kniebeuge, position=1, target_sets=3, target_reps_min=15, target_reps_max=20),
+        TrainingDayExercise(exercise=clara_plank, position=2, target_sets=3, target_reps_min=30, target_reps_max=45),
     ]
+    clara_plan.training_days = [clara_tag]
     clara.workout_plans = [clara_plan]
 
     session.add_all([anna, ben, clara])
+    session.flush()
+
+    # Der aktive Plan wird erst nach dem flush gesetzt - vorher haben die
+    # Plaene noch keine id.
+    anna.active_workout_plan_id = anna_plan.id
+    ben.active_workout_plan_id = ben_neu.id
+    clara.active_workout_plan_id = clara_plan.id
     session.commit()
 
 
@@ -190,19 +312,16 @@ def main() -> None:
         for user in session.scalars(
             select(User).where(User.name.in_(SEED_USERS)).order_by(User.id)
         ):
-            print(f"  User {user.id}: {user.name}")
+            print(f"  User {user.id}: {user.name} ({len(user.exercises)} Uebungen im Katalog)")
             for plan in user.workout_plans:
+                aktiv = " [aktiv]" if plan.id == user.active_workout_plan_id else ""
                 sets_total = sum(len(w.sets) for w in plan.workouts)
-                dauern = [
-                    w.duration_seconds // 60
-                    for w in plan.workouts
-                    if w.duration_seconds is not None
-                ]
-                dauer_text = f", Dauer {'/'.join(map(str, dauern))} min" if dauern else ""
+                custom = sum(1 for w in plan.workouts if w.is_custom)
+                custom_text = f", davon {custom} custom" if custom else ""
                 print(
-                    f"    Plan {plan.id}: {plan.title} "
-                    f"({len(plan.exercises)} Uebungen, "
-                    f"{len(plan.workouts)} Workouts, {sets_total} Saetze{dauer_text})"
+                    f"    Plan {plan.id}: {plan.title}{aktiv} "
+                    f"({plan.training_days_per_week} Trainingstage, "
+                    f"{len(plan.workouts)} Workouts{custom_text}, {sets_total} Saetze)"
                 )
 
 

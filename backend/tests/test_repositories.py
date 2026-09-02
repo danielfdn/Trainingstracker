@@ -4,10 +4,19 @@ from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
-from app.entities import Exercise, Set, User, Workout, WorkoutPlan
+from app.entities import (
+    Exercise,
+    Set,
+    TrainingDay,
+    TrainingDayExercise,
+    User,
+    Workout,
+    WorkoutPlan,
+)
 from app.repositories import (
     ExerciseRepo,
     SetRepo,
+    TrainingDayRepo,
     UserRepo,
     WorkoutPlanRepo,
     WorkoutRepo,
@@ -36,13 +45,13 @@ def test_update_aendert_nur_uebergebene_felder(session: Session) -> None:
     assert user.age == 30
 
 
-def test_get_with_exercises_laedt_verschachtelt(session: Session) -> None:
+def test_get_with_days_laedt_verschachtelt(session: Session) -> None:
     user = _make_user(session)
     plan = WorkoutPlanRepo(session).create(
-        WorkoutPlan(title="Push/Pull", training_days=4, user_id=user.id)
+        WorkoutPlan(title="Push/Pull", user_id=user.id)
     )
     exercise = ExerciseRepo(session).create(
-        Exercise(title="Bankdruecken", weighted=True, workout_plan_id=plan.id)
+        Exercise(title="Bankdruecken", weighted=True, user_id=user.id)
     )
     workout = WorkoutRepo(session).create(
         Workout(date=datetime.now(timezone.utc), workout_plan_id=plan.id)
@@ -54,20 +63,38 @@ def test_get_with_exercises_laedt_verschachtelt(session: Session) -> None:
         Set(repetitions=6, weight=70, exercise_id=exercise.id, workout_id=workout.id)
     )
 
-    loaded = WorkoutPlanRepo(session).get_with_exercises(plan.id)
+    tag = TrainingDayRepo(session).create(
+        TrainingDay(position=1, workout_type="Push", workout_plan_id=plan.id)
+    )
+    TrainingDayRepo(session).add_exercise(
+        TrainingDayExercise(
+            training_day_id=tag.id,
+            exercise_id=exercise.id,
+            target_sets=3,
+            target_reps_min=8,
+            target_reps_max=10,
+        )
+    )
+
+    loaded = WorkoutPlanRepo(session).get_with_days(plan.id)
     assert loaded is not None
-    assert len(loaded.exercises) == 1
-    assert len(loaded.exercises[0].sets) == 2
+    assert loaded.training_days_per_week == 1
+    vorgabe = loaded.training_days[0].exercise_links[0]
+    assert vorgabe.exercise.title == "Bankdruecken"
+    assert vorgabe.target_sets == 3
+    # Die Saetze haengen an der Uebung, nicht am Plan - sie entstehen erst
+    # beim Training.
+    assert len(ExerciseRepo(session).get_with_sets(exercise.id).sets) == 2
 
 
 def test_workout_traegt_seine_saetze(session: Session) -> None:
     """Der neue Pfad Workout -> Saetze: das Protokoll einer Einheit."""
     user = _make_user(session)
     plan = WorkoutPlanRepo(session).create(
-        WorkoutPlan(title="Ganzkoerper", training_days=3, user_id=user.id)
+        WorkoutPlan(title="Ganzkoerper", user_id=user.id)
     )
     exercise = ExerciseRepo(session).create(
-        Exercise(title="Kniebeuge", weighted=True, workout_plan_id=plan.id)
+        Exercise(title="Kniebeuge", weighted=True, user_id=user.id)
     )
     montag = WorkoutRepo(session).create(
         Workout(date=datetime(2026, 8, 24, tzinfo=timezone.utc), workout_plan_id=plan.id)
@@ -99,10 +126,10 @@ def test_delete_workout_loescht_nur_dessen_saetze(session: Session) -> None:
     """Eine Einheit zu loeschen darf den Plan und die Uebung nicht mitreissen."""
     user = _make_user(session)
     plan = WorkoutPlanRepo(session).create(
-        WorkoutPlan(title="Plan", training_days=3, user_id=user.id)
+        WorkoutPlan(title="Plan", user_id=user.id)
     )
     exercise = ExerciseRepo(session).create(
-        Exercise(title="Kniebeuge", workout_plan_id=plan.id)
+        Exercise(title="Kniebeuge", user_id=user.id)
     )
     workout = WorkoutRepo(session).create(
         Workout(date=datetime.now(timezone.utc), workout_plan_id=plan.id)
@@ -121,7 +148,7 @@ def test_delete_workout_loescht_nur_dessen_saetze(session: Session) -> None:
 def test_list_by_user_findet_workouts_ueber_join(session: Session) -> None:
     user = _make_user(session)
     plan = WorkoutPlanRepo(session).create(
-        WorkoutPlan(title="Ganzkoerper", training_days=3, user_id=user.id)
+        WorkoutPlan(title="Ganzkoerper", user_id=user.id)
     )
     WorkoutRepo(session).create(
         Workout(date=datetime.now(timezone.utc), workout_plan_id=plan.id)
@@ -134,10 +161,10 @@ def test_list_by_user_findet_workouts_ueber_join(session: Session) -> None:
 def test_delete_user_raeumt_abhaengige_daten_auf(session: Session) -> None:
     user = _make_user(session)
     plan = WorkoutPlanRepo(session).create(
-        WorkoutPlan(title="Plan", training_days=3, user_id=user.id)
+        WorkoutPlan(title="Plan", user_id=user.id)
     )
     exercise = ExerciseRepo(session).create(
-        Exercise(title="Kniebeuge", workout_plan_id=plan.id)
+        Exercise(title="Kniebeuge", user_id=user.id)
     )
     workout = WorkoutRepo(session).create(
         Workout(date=datetime.now(timezone.utc), workout_plan_id=plan.id)
