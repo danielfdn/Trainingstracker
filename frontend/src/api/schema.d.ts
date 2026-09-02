@@ -183,6 +183,37 @@ export interface paths {
         patch: operations["update_workout_plan_api_v1_workout_plans__plan_id__patch"];
         trace?: never;
     };
+    "/api/v1/workout-plans/{plan_id}/duplicate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Duplicate Workout Plan
+         * @description Kopiert einen Plan samt Trainingstagen und Vorgaben.
+         *
+         *     Ein neuer Plan ist fast immer der alte mit zwei ausgetauschten Uebungen -
+         *     von Hand nachzubauen ist die laestigste Arbeit an der ganzen App.
+         *
+         *     Kopiert werden die VERWEISE auf den Uebungskatalog, niemals die Uebungen
+         *     selbst. Wuerde man die Uebungen mitkopieren, entstuende genau die
+         *     Aufteilung je Plan, die Phase 1 abgeschafft hat: der Monatsvergleich
+         *     faende ueber den Planwechsel hinweg nichts mehr.
+         *
+         *     Die absolvierten Einheiten bleiben beim alten Plan - sie sind
+         *     Vergangenheit, der neue Plan hat noch keine.
+         */
+        post: operations["duplicate_workout_plan_api_v1_workout_plans__plan_id__duplicate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/training-days": {
         parameters: {
             query?: never;
@@ -386,6 +417,34 @@ export interface paths {
          *     Einheiten stehen in der Historie, zaehlen aber nicht in die Auswertung.
          */
         post: operations["create_workout_api_v1_workouts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workouts/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Sync Workout
+         * @description Nimmt eine offline erfasste Einheit samt Saetzen in einem Aufruf an.
+         *
+         *     Gedacht fuer den Trainingsbildschirm: die Saetze werden waehrend des
+         *     Trainings lokal gespeichert und erst beim Abschluss uebertragen. Im Keller
+         *     ohne Empfang geht dabei nichts verloren, und ein Absturz des Browsers
+         *     ebenfalls nicht - die Saetze standen nie nur im Arbeitsspeicher.
+         *
+         *     Idempotent ueber client_uuid: ein wiederholter Aufruf liefert die
+         *     vorhandene Einheit mit 200 zurueck, statt sie ein zweites Mal anzulegen.
+         */
+        post: operations["sync_workout_api_v1_workouts_sync_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -892,6 +951,8 @@ export interface components {
             duration_seconds?: number | null;
             /** Duration */
             duration?: string | null;
+            /** Body Weight */
+            body_weight?: number | null;
             /** Set Count */
             set_count: number;
             /** Exercise Count */
@@ -912,6 +973,18 @@ export interface components {
              * @default []
              */
             training_days: components["schemas"]["TrainingDayNested"][];
+        };
+        /**
+         * WorkoutPlanDuplicate
+         * @description Optionale Angaben beim Kopieren eines Plans.
+         */
+        WorkoutPlanDuplicate: {
+            /** Title */
+            title?: string | null;
+            /** Starting Date */
+            starting_date?: string | null;
+            /** Ending Date */
+            ending_date?: string | null;
         };
         /** WorkoutPlanPublic */
         WorkoutPlanPublic: {
@@ -988,6 +1061,8 @@ export interface components {
             workout_plan_id: number;
             /** Training Day Id */
             training_day_id?: number | null;
+            /** Body Weight */
+            body_weight?: number | null;
             /**
              * Is Custom
              * @description Freies Training - erscheint in der Historie, nicht in der Auswertung.
@@ -1009,6 +1084,63 @@ export interface components {
              *     laufende Uhr statt der Enddauer.
              */
             readonly is_running: boolean;
+        };
+        /**
+         * WorkoutSync
+         * @description Eine abgeschlossene Einheit samt Saetzen, in einem Aufruf.
+         *
+         *     Der Weg ueber POST /workouts und danach ein POST /sets je Satz
+         *     funktioniert offline nicht: die Saetze muessten auf eine id verweisen,
+         *     die der Server noch nicht vergeben hat. Reist die Einheit als Ganzes,
+         *     ist "offline" nur noch "der Aufruf ist noch nicht raus".
+         */
+        WorkoutSync: {
+            /** Client Uuid */
+            client_uuid: string;
+            /** Workout Plan Id */
+            workout_plan_id: number;
+            /** Training Day Id */
+            training_day_id?: number | null;
+            /**
+             * Date
+             * Format: date-time
+             */
+            date: string;
+            /**
+             * Comment
+             * @default
+             */
+            comment: string;
+            /**
+             * Started At
+             * Format: date-time
+             */
+            started_at: string;
+            /**
+             * Finished At
+             * Format: date-time
+             */
+            finished_at: string;
+            /**
+             * Sets
+             * @default []
+             */
+            sets: components["schemas"]["WorkoutSyncSet"][];
+        };
+        /**
+         * WorkoutSyncSet
+         * @description Ein Satz innerhalb einer offline erfassten Einheit.
+         *
+         *     Ohne workout_id: die Einheit gibt es auf dem Server noch gar nicht, wenn
+         *     das Handy den Satz aufzeichnet - genau deshalb reist beides zusammen.
+         */
+        WorkoutSyncSet: {
+            /** Exercise Id */
+            exercise_id: number;
+            /** Repetitions */
+            repetitions: number;
+            /** Weight */
+            weight?: number | null;
         };
         /**
          * WorkoutUpdate
@@ -1059,6 +1191,8 @@ export interface components {
             workout_plan_id: number;
             /** Training Day Id */
             training_day_id?: number | null;
+            /** Body Weight */
+            body_weight?: number | null;
             /**
              * Sets
              * @default []
@@ -1570,6 +1704,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkoutPlanPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    duplicate_workout_plan_api_v1_workout_plans__plan_id__duplicate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                plan_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkoutPlanDuplicate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkoutPlanWithDays"];
                 };
             };
             /** @description Validation Error */
@@ -2224,6 +2393,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["WorkoutPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_workout_api_v1_workouts_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkoutSync"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkoutWithSets"];
                 };
             };
             /** @description Validation Error */

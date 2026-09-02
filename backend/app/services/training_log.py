@@ -104,6 +104,7 @@ class TrainingLogService:
                     plan_title=workout.workout_plan.title,
                     duration_seconds=sekunden,
                     duration=_dauer_text(sekunden),
+                    body_weight=workout.body_weight,
                     set_count=len(workout.sets),
                     exercise_count=len({s.exercise_id for s in workout.sets}),
                 )

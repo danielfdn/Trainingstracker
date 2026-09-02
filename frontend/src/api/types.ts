@@ -13,6 +13,8 @@ export type WorkoutPlan = Schemas['WorkoutPlanPublic']
 export type WorkoutPlanWithDays = Schemas['WorkoutPlanWithDays']
 export type TrainingDay = Schemas['TrainingDayPublic']
 export type Exercise = Schemas['ExercisePublic']
+export type TrainingDayExercise = Schemas['TrainingDayExercisePublic']
+export type TrainingDayWithExercises = Schemas['TrainingDayWithExercises']
 export type Workout = Schemas['WorkoutPublic']
 export type ExerciseSet = Schemas['SetPublic']
 

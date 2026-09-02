@@ -26,6 +26,10 @@ class WorkoutLogEntry(BaseModel):
     plan_title: str
     duration_seconds: int | None = None
     duration: str | None = None
+    # Koerpergewicht am Tag der Einheit, aus workout.body_weight - der Wert
+    # von damals, nicht der von heute. None fuer Einheiten aus der Zeit vor
+    # dieser Spalte.
+    body_weight: float | None = None
     set_count: int
     exercise_count: int
 

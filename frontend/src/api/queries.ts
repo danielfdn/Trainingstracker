@@ -63,3 +63,32 @@ export const progressQuery = (userId: number, monthA: string, monthB: string) =>
         }),
       ),
   })
+
+export const planQuery = (planId: number) =>
+  queryOptions({
+    queryKey: ['plans', planId],
+    queryFn: () =>
+      unwrap(api.GET('/api/v1/workout-plans/{plan_id}', { params: { path: { plan_id: planId } } })),
+  })
+
+export const exercisesQuery = (userId: number) =>
+  queryOptions({
+    queryKey: ['users', userId, 'exercises'],
+    queryFn: () => unwrap(api.GET('/api/v1/exercises', { params: { query: { user_id: userId } } })),
+  })
+
+/** Sessions of one user, newest first — used to find a running workout. */
+export const userWorkoutsQuery = (userId: number) =>
+  queryOptions({
+    queryKey: ['users', userId, 'workouts'],
+    queryFn: () => unwrap(api.GET('/api/v1/workouts', { params: { query: { user_id: userId } } })),
+  })
+
+export const workoutQuery = (workoutId: number) =>
+  queryOptions({
+    queryKey: ['workouts', workoutId],
+    queryFn: () =>
+      unwrap(
+        api.GET('/api/v1/workouts/{workout_id}', { params: { path: { workout_id: workoutId } } }),
+      ),
+  })

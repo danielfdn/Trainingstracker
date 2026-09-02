@@ -17,12 +17,19 @@
   --color-content-muted: #9aa4b0;
   --color-content-faint: #6b7481;
 
-  /* Accent — used for the primary action and the active state. */
-  --color-accent: #4f8cff;
-  --color-accent-hover: #6c9dff;
-  --color-accent-content: #06101f;
+  /* Accent — the primary action and the active state. Purple against the
+     near-black surface: enough presence to lead the eye, dark enough that
+     black text sits on it legibly. */
+  --color-accent: #8b5cf6;
+  --color-accent-hover: #a78bfa;
+  --color-accent-content: #0d0618;
+  /* Tinted surface for accent-coloured panels (the "next up" panel). */
+  --color-accent-muted: #1c1430;
 
-  /* Feedback. */
+  /* Feedback. Colour carries only two meanings: something went wrong
+     (negative) and something improved (positive). A regression in the
+     progress table is NOT coloured — it reads as a sign and an arrow — so a
+     falling number can never be confused with an error or with the accent. */
   --color-positive: #46c98b;
   --color-negative: #f2555a;
 

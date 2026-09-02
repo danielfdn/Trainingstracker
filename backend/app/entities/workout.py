@@ -1,7 +1,17 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, Text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.time import as_utc
@@ -29,6 +39,9 @@ class Workout(Base):
             "finished_at IS NULL OR finished_at >= started_at",
             name="workout_ende_nach_start",
         ),
+        # Benannt, nicht unique=True an der Spalte: ein unbenannter Constraint
+        # laesst sich in downgrade() nicht wieder loeschen.
+        UniqueConstraint("client_uuid", name="workout_client_uuid_einmalig"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -51,6 +64,22 @@ class Workout(Base):
         DateTime(timezone=True), nullable=True
     )
     comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
+
+    # Koerpergewicht am Tag der Einheit. Bewusst hier kopiert und nicht ueber
+    # appuser.weight gelesen: dort steht nur der AKTUELLE Wert, den ein PATCH
+    # ueberschreibt. Wuerde das Log ihn nachschlagen, stuende neben einer
+    # Einheit vom Maerz das Gewicht von heute - das saehe aus wie Historie,
+    # waere aber keine. Der Wert wird beim Anlegen der Einheit aus dem
+    # Benutzerprofil uebernommen; eingeben muss ihn niemand.
+    # nullable, weil Einheiten aus der Zeit vor dieser Spalte keinen
+    # ehrlichen Wert haben - erfinden waere schlimmer als leer lassen.
+    body_weight: Mapped[float | None] = mapped_column(Numeric(5, 2), nullable=True)
+
+    # Vom Client vergebene Kennung fuer die Offline-Synchronisation.
+    # Wenn der Server schreibt, die Antwort aber im Funkloch verloren geht,
+    # wiederholt das Handy den Aufruf - ohne diese Kennung stuende die
+    # Einheit danach zweimal im Log. UNIQUE macht die Wiederholung wirkungslos.
+    client_uuid: Mapped[str | None] = mapped_column(String(36), nullable=True)
 
     workout_plan_id: Mapped[int] = mapped_column(
         ForeignKey("workout_plan.id", ondelete="CASCADE"), nullable=False

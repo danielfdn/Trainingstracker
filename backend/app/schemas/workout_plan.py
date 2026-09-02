@@ -41,6 +41,15 @@ class WorkoutPlanUpdate(BaseModel):
     ending_date: date | None = None
 
 
+class WorkoutPlanDuplicate(BaseModel):
+    """Optionale Angaben beim Kopieren eines Plans."""
+
+    # Ohne Angabe haengt der Endpunkt " (Copy)" an den Titel.
+    title: str | None = Field(default=None, min_length=1, max_length=100)
+    starting_date: date | None = None
+    ending_date: date | None = None
+
+
 class WorkoutPlanPublic(WorkoutPlanBase):
     model_config = ConfigDict(from_attributes=True)
 

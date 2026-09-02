@@ -76,4 +76,5 @@ ExerciseRepoDep = Annotated[ExerciseRepo, Depends(get_exercise_repo)]
 SetRepoDep = Annotated[SetRepo, Depends(get_set_repo)]
 TrainingDayRepoDep = Annotated[TrainingDayRepo, Depends(get_training_day_repo)]
 WorkoutRepoDep = Annotated[WorkoutRepo, Depends(get_workout_repo)]
-TrainingLogServiceDep = Annotated[TrainingLogService, Depends(get_training_log_service)]
+TrainingLogServiceDep = Annotated[TrainingLogService, Depends(
+    get_training_log_service)]

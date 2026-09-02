@@ -30,6 +30,12 @@ remaining screens are placeholders.
 | Custom workouts | `training_day_id IS NULL`; excluded from analysis, shown in history |
 | Custom exercise picker | Pick from catalog, or type a new name that joins the catalog |
 | Workout picker | Lists the plan's training days ("Day 1 — Push"), plus Custom |
+| Accent colour | Purple; regressions are not coloured, so red stays an error |
+| Body weight in the log | `workout.body_weight`, snapshotted from `appuser.weight` |
+| Active plan menu row | Dropped; switching moves into the plan list |
+| Marking a session missed | One tap with undo, no dialog; plus backfill from the log |
+| Rest timer | Not wanted |
+| Offline workouts | Local draft, synced as one whole workout when online |
 
 ---
 
@@ -246,16 +252,17 @@ end.
 
 ---
 
-## Phase 4 — Screens
+## Phase 4 — Screens ✅ done
 
-Following the navigation in the spec:
+Scope fixed on 2026-09-02 from the "Updates post phase 3" section of
+`trainingstracker_specs.md`.
 
 ```
 /                     profile picker
 /:user                main menu
-/:user/plans          plan list + create
+/:user/plans          plan list + create + duplicate + switch the active plan
 /:user/plans/:id      plan editor (catalog picker, ordering)
-/:user/active-plan    select the active plan
+/:user/exercises      exercise catalog
 /:user/workout        day picker (Day 1 — Push … | Custom)
 /:user/workout/:id    live workout: timer, exercise list, set entry
 /:user/log            history
@@ -263,14 +270,149 @@ Following the navigation in the spec:
 /:user/settings       edit user data
 ```
 
-Starting a workout first asks which training day is up today, listing the active
-plan's days by position and type, with "Custom" below the divider. Choosing a day
-prefills the screen from `training_day_exercise`; choosing Custom opens the free
-exercise picker instead.
+`/:user/active-plan` is gone: one choice among the plans does not deserve a
+menu row of its own, so switching becomes a control in the plan list.
 
-The live workout screen is the one that has to work well one-handed on a phone
-mid-set: large tap targets, numeric keypads, the target (3×8-10) visible, and
-last session's numbers prefilled as the starting point.
+### 4.0 Backend prerequisites ✅ done
+
+Revision `92d47e8a52d8`, 63 tests green (15 new). Three changes had to land
+before the screens could be built.
+
+**`workout.body_weight`, Numeric(5,2), nullable.** The log shows the body
+weight of the day, and `appuser.weight` is a single scalar that `PATCH`
+overwrites — reading it per row would print today's weight next to a session
+from March and look like history. The value is therefore snapshotted into the
+workout when it is created, copied from `appuser.weight`; **the user never
+types it**. Editing the weight in the settings screen changes what future
+workouts record and leaves past ones untouched. Nullable because the seeded
+and pre-existing rows have no honest value to backfill.
+
+This also makes bodyweight progress readable: 10 pull-ups at 83 kg and 10 at
+78 kg are not the same achievement, so the progress view can show body weight
+per month next to the reps.
+
+**`POST /api/v1/workouts/sync`** — one workout with its sets nested, written in
+one transaction. Needed for the offline draft (§4.4). The body carries a
+client-generated `client_uuid` with a unique constraint: when the server
+commits but the response is lost on gym wifi, the retry must not duplicate the
+whole session. `started_at`/`finished_at` come from the payload rather than
+from server-now, or a session synced the next morning records as twelve hours
+long.
+
+**`POST /api/v1/workout-plans/{id}/duplicate`** — copies the plan with its
+training days and `training_day_exercise` rows, but no workouts. A new plan is
+almost always the previous one with two exercises swapped. Copying references
+to the catalog (never the exercises themselves) is what keeps the progress
+comparison working across the copy. The date range is not copied either: a
+fresh copy has not started, and the old plan's dates would simply be wrong.
+The title defaults to `"<title> (Copy)"` and can be overridden in the body.
+
+As built, two details differ from the sketch above. The unique constraint on
+`client_uuid` is **named** (`workout_client_uuid_einmalig`) — autogenerate
+emitted it unnamed again, which would have left `downgrade` unable to drop it,
+the same defect as in `ca67bbcf8314`. And `seed.py` now writes a body-weight
+drift across the seeded history (two kilos down over six months to today's
+profile weight), because a snapshot taken retroactively would otherwise print
+the same number against every session and make the column look pointless.
+
+### 4.1 Main menu ✅ done
+
+Rows: start a workout, workout plans, exercise catalog, training log, edit
+user data. Above them, two panels:
+
+- **Next up.** The active plan, plus which training day is due — derived from
+  the most recent attended workout's `training_day.position`, cycling to the
+  next. A panel that only prints the plan title is decoration; naming the next
+  day answers the question you opened the app with, and the day picker
+  preselects it.
+- **Last session.** Date, days since, what it was. One `/log/workouts?limit=1`.
+
+**Resume, if a workout is running.** `started_at` set and `finished_at` null
+means the session is still open — you closed the tab or your phone locked.
+Without this the menu only offers "start", so you would create a second
+workout while the first stays open until `auto_close_stale` writes a phantom
+six-hour session into your history. When one is running the menu leads with
+"Resume — Push, running 24 min" and demotes "start" below it.
+
+### 4.2 Marking a session missed ✅ done
+
+`attended=False` exists in the model and the log already renders it, but
+nothing can create one. A plan has training days and no dates, so nothing
+knows you *meant* to train on Tuesday — marking a session missed means writing
+a workout row retroactively, with no times and no sets.
+
+Two entry points, and deliberately no form:
+
+- On the day picker, the row's main tap starts the session; a secondary
+  control marks it missed for today in one tap. It writes optimistically and
+  offers a five-second undo toast instead of a confirmation dialog — a missed
+  session is trivially reversible, so confirming costs more than the mistake.
+- In the log, "log a missed session" backfills a past date, because you
+  remember on Thursday that you skipped Tuesday.
+
+### 4.3 Exercise catalog ✅ done
+
+`exercise` is already generic — `title`, `weighted`, `user_id`, nothing else.
+Target sets and rep ranges belong to `training_day_exercise`, actual weights to
+`exercise_set`. **The catalog screen must keep it that way:** it edits the name
+and the weighted flag, and nothing about sets, reps or weight.
+
+It exists because of `UNIQUE(user_id, title)`. Type "Bankdrucken" once in a
+custom workout and you own a second catalog row that splits that exercise's
+history in two — the exact failure phase 1 removed. Renaming and deleting are
+the repair tools, and this is the only data the app can currently create but
+never fix.
+
+### 4.4 Live workout, and offline ✅ done
+
+The screen that has to work one-handed on a phone mid-set: large tap targets,
+numeric keypads, the target (3×8-10) visible, last session's numbers
+prefilled.
+
+**A rep range is a target, not a rule.** Six reps against an 8-10 target is
+recorded silently — no miss marker, no warning.
+
+**Sets are written to local storage as they happen, and synced as one whole
+workout on finish** (`POST /workouts/sync`). The alternative — `POST /workouts`
+for an id, then one `POST /sets` per set — cannot work offline: the queued sets
+reference an id the server has not issued yet, so every replay has to rewrite
+ids and preserve ordering across two resources. Making the workout the unit of
+sync turns offline into "the request has not gone out yet".
+
+Only completed workouts sync; a running one arriving late could be picked up by
+`auto_close_stale`. The side effect is worth as much as the offline support:
+your sets survive a crashed tab or a dead battery, because they were never
+only in memory.
+
+### 4.5 Colour ✅ done
+
+Purple accent (`--color-accent`), dark and restrained, per the spec update.
+
+**Colour carries only two meanings: error and improvement.** A falling number
+in the progress table is not coloured red — it reads as a sign and a down
+arrow, with green reserved as the only coloured delta. Otherwise "you lost
+5 kg on bench" and a primary button would signal the same thing, and red would
+mean both "worse" and "wrong".
+
+---
+
+### 4.6 As built
+
+- **Storage is `localStorage`, not IndexedDB.** A session is a few kilobytes,
+  and a synchronous read keeps the live screen free of loading states. The
+  reasons for keeping the draft local at all are unchanged.
+- **One live route, `/workout/live`,** not one per workout id: the session has
+  no server id until it is finished and synced, so there is nothing to put in
+  the URL. Resuming means finding the draft on the device, which also survives
+  a closed tab, a locked phone and a dead battery.
+- **"Next up"** is the training day after the most recent *attended, non-custom*
+  session, cycling round. Custom sessions are skipped because they are
+  improvised and say nothing about where you are in the rotation.
+- **Set rows are prefilled to `target_sets`** — three empty rows for a 3×8-10 —
+  so the usual case is typing numbers rather than tapping "add" first. Rows
+  left empty are not saved.
+- **The catalog cannot express sets or reps,** by construction: the form edits
+  a name and the weighted flag, nothing else.
 
 ---
 

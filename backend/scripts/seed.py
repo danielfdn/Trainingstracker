@@ -76,6 +76,28 @@ def _einheit(
     )
 
 
+def _gewichtsverlauf(user: User) -> None:
+    """Traegt je Einheit das Koerpergewicht von damals ein.
+
+    Im Betrieb kopiert der Endpunkt beim Anlegen einfach den Profilwert. Die
+    Seed-Historie entsteht dagegen rueckwirkend an einem Tag, deshalb hier
+    ein leichter Verlauf: heute das Profilgewicht, ein halbes Jahr zurueck
+    zwei Kilo mehr. Ohne das stuende neben jeder Einheit dieselbe Zahl und
+    die Spalte saehe im Log sinnlos aus.
+    """
+    einheiten = sorted(
+        (workout for plan in user.workout_plans for workout in plan.workouts),
+        key=lambda workout: workout.date,
+    )
+    if not einheiten:
+        return
+    aeltester = einheiten[0].date
+    spanne = (einheiten[-1].date - aeltester).days or 1
+    for workout in einheiten:
+        anteil = (workout.date - aeltester).days / spanne
+        workout.body_weight = round(user.weight + 2.0 * (1 - anteil), 1)
+
+
 def clear(session) -> int:
     """Entfernt die vom Skript angelegten User samt allem, was daran haengt."""
     users = session.scalars(select(User).where(User.name.in_(SEED_USERS))).all()
@@ -299,6 +321,9 @@ def seed(session) -> None:
     anna.active_workout_plan_id = anna_plan.id
     ben.active_workout_plan_id = ben_neu.id
     clara.active_workout_plan_id = clara_plan.id
+
+    for user in (anna, ben, clara):
+        _gewichtsverlauf(user)
     session.commit()
 
 

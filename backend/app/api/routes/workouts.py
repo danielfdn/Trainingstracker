@@ -1,14 +1,22 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 
-from app.api.deps import TrainingDayRepoDep, WorkoutPlanRepoDep, WorkoutRepoDep
+from app.api.deps import (
+    ExerciseRepoDep,
+    TrainingDayRepoDep,
+    UserRepoDep,
+    WorkoutPlanRepoDep,
+    WorkoutRepoDep,
+)
 from app.core.config import settings
 from app.core.time import as_utc
+from app.entities.set import Set
 from app.entities.workout import Workout
 from app.schemas.workout import (
     WorkoutCreate,
     WorkoutPublic,
+    WorkoutSync,
     WorkoutUpdate,
     WorkoutWithSets,
 )
@@ -27,12 +35,24 @@ def _vergessene_schliessen(repo) -> None:
     repo.auto_close_stale(MAX_DAUER)
 
 
+def _koerpergewicht(plan, user_repo) -> float | None:
+    """Das aktuelle Profilgewicht - eingefroren fuer diese eine Einheit.
+
+    Der User traegt es nirgends ein: es steht ohnehin im Profil, und dort
+    aendert er es, wenn es sich aendert. Aendern wirkt sich nur auf kuenftige
+    Einheiten aus, denn hier ist es dann schon kopiert.
+    """
+    user = user_repo.get(plan.user_id)
+    return user.weight if user is not None else None
+
+
 @router.post("", response_model=WorkoutPublic, status_code=status.HTTP_201_CREATED)
 def create_workout(
     workout_in: WorkoutCreate,
     repo: WorkoutRepoDep,
     plan_repo: WorkoutPlanRepoDep,
     day_repo: TrainingDayRepoDep,
+    user_repo: UserRepoDep,
 ) -> Workout:
     """Legt eine Einheit an.
 
@@ -40,7 +60,8 @@ def create_workout(
     ein freies Training - z.B. wenn im Hotel die Geraete fehlen. Freie
     Einheiten stehen in der Historie, zaehlen aber nicht in die Auswertung.
     """
-    if plan_repo.get(workout_in.workout_plan_id) is None:
+    plan = plan_repo.get(workout_in.workout_plan_id)
+    if plan is None:
         raise HTTPException(
             status_code=404,
             detail=f"Trainingsplan {workout_in.workout_plan_id} nicht gefunden",
@@ -62,7 +83,112 @@ def create_workout(
                     f"die Einheit aber zu Plan {workout_in.workout_plan_id}"
                 ),
             )
-    return repo.create(Workout(**workout_in.model_dump()))
+    return repo.create(
+        Workout(**workout_in.model_dump(), body_weight=_koerpergewicht(plan, user_repo))
+    )
+
+
+@router.post(
+    "/sync",
+    response_model=WorkoutWithSets,
+    status_code=status.HTTP_201_CREATED,
+)
+def sync_workout(
+    einheit: WorkoutSync,
+    antwort: Response,
+    repo: WorkoutRepoDep,
+    plan_repo: WorkoutPlanRepoDep,
+    day_repo: TrainingDayRepoDep,
+    exercise_repo: ExerciseRepoDep,
+    user_repo: UserRepoDep,
+) -> Workout:
+    """Nimmt eine offline erfasste Einheit samt Saetzen in einem Aufruf an.
+
+    Gedacht fuer den Trainingsbildschirm: die Saetze werden waehrend des
+    Trainings lokal gespeichert und erst beim Abschluss uebertragen. Im Keller
+    ohne Empfang geht dabei nichts verloren, und ein Absturz des Browsers
+    ebenfalls nicht - die Saetze standen nie nur im Arbeitsspeicher.
+
+    Idempotent ueber client_uuid: ein wiederholter Aufruf liefert die
+    vorhandene Einheit mit 200 zurueck, statt sie ein zweites Mal anzulegen.
+    """
+    vorhanden = repo.get_by_client_uuid(einheit.client_uuid)
+    if vorhanden is not None:
+        # Kein Fehler: aus Sicht des Handys ist genau das der Erfolgsfall,
+        # nur eben schon beim ersten Versuch passiert.
+        antwort.status_code = status.HTTP_200_OK
+        return vorhanden
+
+    plan = plan_repo.get(einheit.workout_plan_id)
+    if plan is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Trainingsplan {einheit.workout_plan_id} nicht gefunden",
+        )
+    if einheit.training_day_id is not None:
+        tag = day_repo.get(einheit.training_day_id)
+        if tag is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Trainingstag {einheit.training_day_id} nicht gefunden",
+            )
+        if tag.workout_plan_id != einheit.workout_plan_id:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Trainingstag {tag.id} gehoert zu Plan {tag.workout_plan_id}, "
+                    f"die Einheit aber zu Plan {einheit.workout_plan_id}"
+                ),
+            )
+
+    workout = Workout(
+        date=einheit.date,
+        # Wer eine Einheit uebertraegt, hat sie absolviert.
+        attended=True,
+        comment=einheit.comment,
+        started_at=einheit.started_at,
+        finished_at=einheit.finished_at,
+        workout_plan_id=einheit.workout_plan_id,
+        training_day_id=einheit.training_day_id,
+        client_uuid=einheit.client_uuid,
+        body_weight=_koerpergewicht(plan, user_repo),
+    )
+
+    for satz in einheit.sets:
+        uebung = exercise_repo.get(satz.exercise_id)
+        if uebung is None:
+            raise HTTPException(
+                status_code=404, detail=f"Uebung {satz.exercise_id} nicht gefunden"
+            )
+        if uebung.user_id != plan.user_id:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Uebung '{uebung.title}' gehoert zu User {uebung.user_id}, "
+                    f"das Workout aber zu User {plan.user_id}"
+                ),
+            )
+        # Dieselbe Fachregel wie in POST /sets - eine Uebung ohne
+        # Zusatzgewicht darf kein Gewicht tragen.
+        if not uebung.weighted and satz.weight is not None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Uebung '{uebung.title}' ist nicht gewichtsbasiert - "
+                    "weight muss leer bleiben"
+                ),
+            )
+        workout.sets.append(
+            Set(
+                exercise_id=satz.exercise_id,
+                repetitions=satz.repetitions,
+                weight=satz.weight,
+            )
+        )
+
+    # Ein einziges commit fuer Einheit und Saetze: entweder die ganze
+    # Trainingseinheit steht in der Datenbank, oder gar nichts davon.
+    return repo.create(workout)
 
 
 @router.get("", response_model=list[WorkoutPublic])

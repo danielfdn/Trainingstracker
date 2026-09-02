@@ -6,6 +6,7 @@ from app.entities.training_day_exercise import TrainingDayExercise
 from app.entities.workout_plan import WorkoutPlan
 from app.schemas.workout_plan import (
     WorkoutPlanCreate,
+    WorkoutPlanDuplicate,
     WorkoutPlanPublic,
     WorkoutPlanUpdate,
     WorkoutPlanWithDays,
@@ -76,6 +77,61 @@ def read_workout_plan(plan_id: int, repo: WorkoutPlanRepoDep) -> WorkoutPlan:
             status_code=404, detail=f"Trainingsplan {plan_id} nicht gefunden"
         )
     return plan
+
+
+@router.post(
+    "/{plan_id}/duplicate",
+    response_model=WorkoutPlanWithDays,
+    status_code=status.HTTP_201_CREATED,
+)
+def duplicate_workout_plan(
+    plan_id: int,
+    angaben: WorkoutPlanDuplicate,
+    repo: WorkoutPlanRepoDep,
+) -> WorkoutPlan:
+    """Kopiert einen Plan samt Trainingstagen und Vorgaben.
+
+    Ein neuer Plan ist fast immer der alte mit zwei ausgetauschten Uebungen -
+    von Hand nachzubauen ist die laestigste Arbeit an der ganzen App.
+
+    Kopiert werden die VERWEISE auf den Uebungskatalog, niemals die Uebungen
+    selbst. Wuerde man die Uebungen mitkopieren, entstuende genau die
+    Aufteilung je Plan, die Phase 1 abgeschafft hat: der Monatsvergleich
+    faende ueber den Planwechsel hinweg nichts mehr.
+
+    Die absolvierten Einheiten bleiben beim alten Plan - sie sind
+    Vergangenheit, der neue Plan hat noch keine.
+    """
+    original = repo.get_with_days(plan_id)
+    if original is None:
+        raise HTTPException(
+            status_code=404, detail=f"Trainingsplan {plan_id} nicht gefunden"
+        )
+
+    kopie = WorkoutPlan(
+        user_id=original.user_id,
+        title=angaben.title or f"{original.title} (Copy)",
+        # Die Zeitraeume werden NICHT uebernommen: ein frisch kopierter Plan
+        # hat noch nicht begonnen, und die Daten des alten waeren schlicht
+        # falsch. Wer sie kennt, schickt sie mit.
+        starting_date=angaben.starting_date,
+        ending_date=angaben.ending_date,
+    )
+    for tag in original.training_days:
+        neuer_tag = TrainingDay(position=tag.position, workout_type=tag.workout_type)
+        for link in tag.exercise_links:
+            neuer_tag.exercise_links.append(
+                TrainingDayExercise(
+                    exercise_id=link.exercise_id,
+                    position=link.position,
+                    target_sets=link.target_sets,
+                    target_reps_min=link.target_reps_min,
+                    target_reps_max=link.target_reps_max,
+                )
+            )
+        kopie.training_days.append(neuer_tag)
+
+    return repo.create(kopie)
 
 
 @router.patch("/{plan_id}", response_model=WorkoutPlanPublic)

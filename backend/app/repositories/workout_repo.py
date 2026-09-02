@@ -81,6 +81,20 @@ class WorkoutRepo(BaseRepo[Workout]):
         )
         return list(self.session.scalars(statement).all())
 
+    def get_by_client_uuid(self, client_uuid: str) -> Workout | None:
+        """Findet eine bereits synchronisierte Einheit wieder.
+
+        Grundlage der Idempotenz: schreibt der Server, geht die Antwort aber
+        im Funkloch verloren, schickt das Handy dieselbe Einheit noch einmal.
+        Gefunden wird dann die vorhandene, statt eine zweite anzulegen.
+        """
+        statement = (
+            select(Workout)
+            .where(Workout.client_uuid == client_uuid)
+            .options(selectinload(Workout.sets))
+        )
+        return self.session.scalars(statement).first()
+
     def get_with_sets(self, id: int) -> Workout | None:
         """Einheit samt absolvierter Saetze - eine Query statt N+1."""
         statement = (

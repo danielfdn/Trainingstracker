@@ -26,4 +26,16 @@ Frontend:
 	- React, TS on vite & Tailwind as the Tech stack of choice
  
 
-	
+Updates post phase 3:
+
+Frontend reviews:
+	- keep the dark touch and add purple details to the frontend, without overdo		ing 
+
+Functional reviews:
+ 	- if an workout isn't marked as finished, meaning the user didn't finish 	and the auto finnish after 6 hours hasn't been reached, the user should be 	 able to resume that unfinished workout, if e.g the has been closed	
+	- a panel showing the current workoutplan 
+	- a 'last session' strip showing info about the last workout (date, days since, what it was, ...)
+ 	- the 'active plan' panel doesn't deserve it's own row - the option of switch should be implemented later on in 'workout plans'
+	- a comfortable way of marking a workout as missed - surprise me.
+	- in the training log: mark the current body weight at the time of each w		orkout
+	  
