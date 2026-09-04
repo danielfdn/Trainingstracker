@@ -218,7 +218,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 .env
-ROADMAP.md
+
 
 # macOS
 .DS_Store
@@ -231,6 +231,11 @@ node_modules/
 
 # Other files
 package.json
+OVERVIEW.md
+UMBAU.md
+trainingstracker.md
+trainingstracker_specs.md
+
 # The Python template above ignores build/, dist/ and lib/ as packaging
 # artefacts. "lib/" also matches the frontend source directory, which would
 # silently drop every new file added there - re-include it.

@@ -1,15 +1,28 @@
 import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { usersQuery } from '../api/queries'
 import { useCreateUser } from '../api/mutations'
+import { isInstalled, lastProfile } from '../lib/lastProfile'
 import { Button, ErrorNote, Field, Loading, Modal, PageTitle } from '../components/ui'
 
 /** Landing page: pick a profile, or create the first one. */
 export function ProfilePicker() {
   const { data: users, isPending, error, refetch } = useQuery(usersQuery())
   const [formOpen, setFormOpen] = useState(false)
+  const navigate = useNavigate()
+
+  // Launched from the home screen, go straight to the profile you were last
+  // in — but only once the list confirms it still exists, so a deleted
+  // profile cannot strand the app on a dead route.
+  const remembered = lastProfile()
+  useEffect(() => {
+    if (!isInstalled() || remembered === null || users === undefined) return
+    if (users.some((user) => user.id === remembered)) {
+      navigate(`/u/${remembered}`, { replace: true })
+    }
+  }, [remembered, users, navigate])
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-3xl flex-col justify-center px-4 py-10">

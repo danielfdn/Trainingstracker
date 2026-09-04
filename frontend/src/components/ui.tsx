@@ -111,7 +111,7 @@ export function ErrorNote({ error, onRetry }: { error: unknown; onRetry?: () => 
     <Card className="border-negative/40">
       <p className="text-sm text-negative">{message}</p>
       <p className="mt-1 text-sm text-content-muted">
-        Is the backend running on {import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000'}?
+        Check that the backend is reachable and try again.
       </p>
       {onRetry && (
         <Button className="mt-4" onClick={onRetry}>

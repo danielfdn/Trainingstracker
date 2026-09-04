@@ -6,10 +6,9 @@ got to its current state; this file describes where it goes next.
 Written in English because that is the language we work in now. The existing
 German files (`UMBAU.md`, the code comments under `backend/app/`) stay German.
 
-**Status (2026-09-02):** Phases 0 to 3 done. 48 tests green, 41 endpoints,
-Postgres migrated to head (`ca67bbcf8314`), seed data rebuilt. The frontend
-scaffold builds, talks to the API and renders the profile picker; the
-remaining screens are placeholders.
+**Status (2026-09-04):** All phases done. 63 tests green, 43 endpoints,
+Postgres migrated to head (`92d47e8a52d8`). Every screen is built, and the app
+is installable on the iPhone over HTTPS from the tailnet.
 
 ---
 
@@ -416,10 +415,77 @@ mean both "worse" and "wrong".
 
 ---
 
-## Phase 5 — PWA
+## Phase 5 — PWA ✅ done
 
-`vite-plugin-pwa` for manifest and service worker, icons, iOS install metadata,
-verified as an installed app on the iPhone.
+Installable on the iPhone, served over real HTTPS from the tailnet.
+
+### 5.1 One origin, because HTTPS forces it
+
+A service worker only registers on HTTPS or `localhost` — no exceptions on
+iOS. And an HTTPS page may not call an HTTP API (mixed content). Serving the
+app from `http://192.168.178.29:5173` would therefore have failed twice over:
+no service worker, no install, and no way to reach the API once it was secure.
+
+So **the backend serves the built frontend**. `app/main.py` mounts
+`frontend/dist` at `/`, the API keeps `/api/v1`, and everything lives on one
+origin. CORS stops mattering entirely; it stays configured only for the dev
+server on 5173.
+
+Two details that were not obvious:
+
+- **`StaticFiles(html=True)` is not an SPA fallback.** It only falls back for
+  directory paths, so `/u/3/log/progress` returned 404 on reload. `SpaStaticFiles`
+  catches the 404 and serves `index.html` — and it has to *catch* it, because
+  `StaticFiles` raises the 404 rather than returning it.
+- **That fallback must exclude `/api/`.** Without the guard an API typo
+  answered with the HTML shell and status 200, so a client expecting JSON got
+  "success" and a web page.
+- **`/sw.js` is served with `Cache-Control: no-cache`.** A cached service
+  worker is one that can never ship an update again.
+
+### 5.2 Caching
+
+`vite-plugin-pwa`, `registerType: 'autoUpdate'`. Precaches the built shell
+(15 entries, ~395 KiB) so the app opens with no connection.
+
+API **reads** are cached NetworkFirst with a 5s timeout: online you always get
+fresh data, offline you get the last thing you saw, which is enough to run a
+workout from your plan. **Writes are not cached and not queued** — they fail
+honestly. The one write that must survive offline, logging sets, was already
+solved in §4.4 by the local draft and the one-shot sync on finish.
+
+Auto-update is safe here specifically *because* the draft lives in
+`localStorage` and survives the reload. An in-memory workout screen would make
+`autoUpdate` a data-loss bug.
+
+### 5.3 Install and launch
+
+- Icons generated at 192, 512, a maskable 512 (mark inside the middle 80%, since
+  Android crops to its own shape) and a square 180 for iOS, which applies its
+  own rounding.
+- iOS offers no install prompt and never will — it is Share → Add to Home
+  Screen, in Safari only.
+- **The installed app opens straight into the profile you used last**
+  (`lib/lastProfile.ts`). `start_url` is `/`, which would otherwise mean the
+  profile picker on every single launch. Only in standalone mode: in a browser
+  tab the picker is a page you navigated to deliberately. "Switch profile"
+  clears the memory first, or the app would bounce right back in.
+
+### 5.4 Hosting: Tailscale
+
+`tailscale serve --bg 8000` proxies the tailnet hostname to the local backend
+with a genuine Let's Encrypt certificate — verified end to end, `curl` with no
+`-k`, subject `CN=macbook-air-von-daniel.tailaf0ce9.ts.net`. Nothing is exposed
+to the public internet, which matters because the API still has no
+authentication: anyone who can reach it can read and delete every profile.
+
+Running it:
+
+```bash
+cd frontend && npm run build      # after any frontend change
+cd backend  && uv run uvicorn app.main:app --port 8000
+tailscale serve --bg 8000         # once; persists until `--https=443 off`
+```
 
 ---
 

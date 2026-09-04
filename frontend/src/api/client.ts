@@ -2,8 +2,17 @@ import createClient from 'openapi-fetch'
 
 import type { paths } from './schema'
 
-/** Base URL of the backend, without a trailing slash (see .env.example). */
-const baseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000'
+/**
+ * Base URL of the backend, without a trailing slash.
+ *
+ * Empty in a production build: the backend serves the built app, so the API
+ * is on the same origin. That is what lets the installed PWA work over HTTPS
+ * at all — an HTTPS page may not call an HTTP API, and same-origin also means
+ * no CORS. In development the two run on different ports, so the dev default
+ * points at the local backend. Override with VITE_API_BASE_URL if needed.
+ */
+const baseUrl =
+  import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? 'http://127.0.0.1:8000' : '')
 
 /**
  * The single typed entry point to the API.
