@@ -5,7 +5,8 @@ import { useNavigate } from 'react-router-dom'
 import { useSyncWorkout } from '../api/mutations'
 import { exercisesQuery, planQuery } from '../api/queries'
 import type { Exercise } from '../api/types'
-import { Button, Card, EmptyState, Modal, Select } from '../components/ui'
+import { ExerciseCard, SetRow } from '../components/SetList'
+import { Button, Card, EmptyState, Modal, Select, TextArea } from '../components/ui'
 import {
   clearDraft,
   elapsedSeconds,
@@ -88,6 +89,8 @@ export function LiveWorkout() {
   return (
     <>
       <Header draft={draft} />
+
+      <SessionNote draft={draft} onChange={update} />
 
       <div className="grid gap-4">
         {planned.map((link) => (
@@ -185,6 +188,77 @@ function Header({ draft }: { draft: WorkoutDraft }) {
   )
 }
 
+/**
+ * The session note — one free-text field for the whole workout.
+ *
+ * Written into the draft rather than sent immediately: mid-workout there may
+ * be no connection, and the note travels with the session on finish like the
+ * sets do. Editing it again before finishing simply overwrites it.
+ */
+function SessionNote({
+  draft,
+  onChange,
+}: {
+  draft: WorkoutDraft
+  onChange: (draft: WorkoutDraft) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState(draft.comment)
+
+  return (
+    <>
+      <button
+        onClick={() => {
+          // Start from what is stored, not from whatever a cancelled edit left.
+          setText(draft.comment)
+          setOpen(true)
+        }}
+        className="mb-6 w-full rounded-card border border-dashed border-border bg-surface-raised p-4 text-left transition-colors hover:border-border-strong hover:bg-surface-hover"
+      >
+        <span className="block text-xs uppercase tracking-wide text-content-faint">
+          Session note
+        </span>
+        <span
+          className={`mt-1 block text-sm ${draft.comment ? 'text-content' : 'text-content-muted'}`}
+        >
+          {draft.comment || 'Add a note — how it went, what to change next time.'}
+        </span>
+      </button>
+
+      {open && (
+        <Modal title="Session note" onClose={() => setOpen(false)}>
+          <div className="grid gap-4">
+            <TextArea
+              label="Note"
+              value={text}
+              // Matches the column: the server rejects anything longer.
+              maxLength={2000}
+              autoFocus
+              placeholder="Felt strong. Bench moved well, squats heavy."
+              hint="Kept on this device and sent with the workout when you finish."
+              onChange={(e) => setText(e.target.value)}
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  onChange({ ...draft, comment: text })
+                  setOpen(false)
+                }}
+              >
+                Save
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </>
+  )
+}
+
 function targetText(sets: number, min: number | undefined, max: number | undefined): string {
   if (min === undefined || min === null) return `${sets}×`
   if (max === undefined || max === null || max === min) return `${sets}×${min}`
@@ -246,69 +320,64 @@ function ExerciseBlock({
   const box =
     'min-h-11 w-full rounded-lg border border-border bg-surface px-3 text-center text-lg tabular focus:border-accent focus:outline-none'
 
-  return (
-    <Card>
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 className="min-w-0 truncate font-medium">{title}</h2>
-        {target && <span className="shrink-0 text-sm text-content-muted tabular">{target}</span>}
-      </div>
+  const addSet = () =>
+    onChange({
+      ...draft,
+      sets: [
+        ...draft.sets,
+        { key: crypto.randomUUID(), exercise_id: exerciseId, repetitions: 0, weight: null },
+      ],
+    })
 
-      <div className="mt-3 grid gap-2">
-        {rows.map((set, index) => (
-          <div key={set?.key ?? `empty-${index}`} className="flex items-center gap-2">
-            <span className="w-6 shrink-0 text-sm text-content-faint tabular">{index + 1}</span>
+  return (
+    <ExerciseCard
+      title={title}
+      meta={target}
+      footer={
+        <>
+          <Button className="mt-3" onClick={addSet}>
+            Add set
+          </Button>
+          <p className="mt-3 text-xs text-content-faint">Rows left empty are not saved.</p>
+        </>
+      }
+    >
+      {rows.map((set, index) => (
+        <SetRow key={set?.key ?? `empty-${index}`} index={index}>
+          <input
+            className={box}
+            type="number"
+            inputMode="numeric"
+            placeholder="reps"
+            defaultValue={set?.repetitions || ''}
+            onBlur={(e) => write(index, { repetitions: Number(e.target.value) })}
+          />
+          {weighted && (
             <input
               className={box}
               type="number"
-              inputMode="numeric"
-              placeholder="reps"
-              defaultValue={set?.repetitions || ''}
-              onBlur={(e) => write(index, { repetitions: Number(e.target.value) })}
+              inputMode="decimal"
+              step="0.5"
+              placeholder="kg"
+              defaultValue={set?.weight ?? ''}
+              onBlur={(e) =>
+                write(index, { weight: e.target.value === '' ? null : Number(e.target.value) })
+              }
             />
-            {weighted && (
-              <input
-                className={box}
-                type="number"
-                inputMode="decimal"
-                step="0.5"
-                placeholder="kg"
-                defaultValue={set?.weight ?? ''}
-                onBlur={(e) =>
-                  write(index, { weight: e.target.value === '' ? null : Number(e.target.value) })
-                }
-              />
-            )}
-            {set && (
-              <Button
-                variant="ghost"
-                onClick={() =>
-                  onChange({ ...draft, sets: draft.sets.filter((row) => row.key !== set.key) })
-                }
-              >
-                ✕
-              </Button>
-            )}
-          </div>
-        ))}
-      </div>
-
-      <Button
-        className="mt-3"
-        onClick={() =>
-          onChange({
-            ...draft,
-            sets: [
-              ...draft.sets,
-              { key: crypto.randomUUID(), exercise_id: exerciseId, repetitions: 0, weight: null },
-            ],
-          })
-        }
-      >
-        Add set
-      </Button>
-
-      <p className="mt-3 text-xs text-content-faint">Rows left empty are not saved.</p>
-    </Card>
+          )}
+          {set && (
+            <Button
+              variant="ghost"
+              onClick={() =>
+                onChange({ ...draft, sets: draft.sets.filter((row) => row.key !== set.key) })
+              }
+            >
+              ✕
+            </Button>
+          )}
+        </SetRow>
+      ))}
+    </ExerciseCard>
   )
 }
 

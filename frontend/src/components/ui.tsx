@@ -148,6 +148,20 @@ export function Field({
   )
 }
 
+export function TextArea({
+  label,
+  hint,
+  ...props
+}: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { label: string; hint?: string }) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-sm text-content-muted">{label}</span>
+      <textarea className={`${fieldBase} min-h-24 resize-y py-2.5`} {...props} />
+      {hint && <span className="mt-1 block text-xs text-content-faint">{hint}</span>}
+    </label>
+  )
+}
+
 export function Select({
   label,
   children,

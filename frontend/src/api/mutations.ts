@@ -266,6 +266,31 @@ export function useSyncWorkout(userId: number) {
 }
 
 /**
+ * Edits the note on a session that is already synced.
+ *
+ * The live screen writes the note into the local draft; once the workout is
+ * on the server the draft is gone, so the second entry point is a PATCH —
+ * you usually remember the useful remark the morning after.
+ */
+export function useUpdateWorkoutComment(userId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ workoutId, comment }: { workoutId: number; comment: string }) =>
+      unwrap(
+        api.PATCH('/api/v1/workouts/{workout_id}', {
+          params: { path: { workout_id: workoutId } },
+          body: { comment },
+        }),
+      ),
+    onSuccess: (workout) => {
+      qc.invalidateQueries({ queryKey: ['workouts', workout.id] })
+      qc.invalidateQueries({ queryKey: ['users', userId, 'log'] })
+      qc.invalidateQueries({ queryKey: ['users', userId, 'workouts'] })
+    },
+  })
+}
+
+/**
  * Records a session you did not do.
  *
  * A plan has training days but no dates, so nothing knows you meant to train

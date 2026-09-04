@@ -225,3 +225,13 @@ ROADMAP.md
 
 # Persoenliche Lernnotiz, nicht Teil des Repos
 OVERVIEW.md
+
+# Node (Frontend + Dev-Runner im Root)
+node_modules/
+
+# Other files
+package.json
+# The Python template above ignores build/, dist/ and lib/ as packaging
+# artefacts. "lib/" also matches the frontend source directory, which would
+# silently drop every new file added there - re-include it.
+!frontend/src/lib/

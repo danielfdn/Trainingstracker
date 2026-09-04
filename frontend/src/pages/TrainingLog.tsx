@@ -50,51 +50,59 @@ export function TrainingLog() {
       <ul className="grid gap-3">
         {entries.map((entry) => (
           <li key={entry.id}>
-            <Card className={entry.attended ? undefined : 'border-dashed'}>
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate font-medium">
-                    {entry.workout_type}
-                    {entry.is_custom && (
-                      <span className="ml-2 rounded-full bg-surface-hover px-2 py-0.5 text-xs text-content-muted">
-                        Custom
-                      </span>
+            {/* The whole row is the tap target — the detail view is the
+                only thing you ever want from a log entry. */}
+            <Link to={`/u/${userId}/log/${entry.id}`} className="block">
+              <Card
+                className={`transition-colors hover:border-border-strong hover:bg-surface-hover ${
+                  entry.attended ? '' : 'border-dashed'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">
+                      {entry.workout_type}
+                      {entry.is_custom && (
+                        <span className="ml-2 rounded-full bg-surface-hover px-2 py-0.5 text-xs text-content-muted">
+                          Custom
+                        </span>
+                      )}
+                      {!entry.attended && (
+                        <span className="ml-2 rounded-full bg-surface-hover px-2 py-0.5 text-xs text-content-muted">
+                          Missed
+                        </span>
+                      )}
+                    </p>
+                    <p className="mt-0.5 truncate text-sm text-content-muted tabular">
+                      {new Date(entry.date).toLocaleDateString('de-DE', {
+                        day: '2-digit',
+                        month: '2-digit',
+                        year: 'numeric',
+                      })}
+                      {' · '}
+                      {entry.plan_title}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right text-sm tabular">
+                    {entry.duration && <p className="text-content-muted">{entry.duration}</p>}
+                    {/* The weight of that day, not today's — the reason
+                        workout.body_weight exists at all. */}
+                    {entry.body_weight !== null && entry.body_weight !== undefined && (
+                      <p className="text-content-faint">{entry.body_weight} kg</p>
                     )}
-                    {!entry.attended && (
-                      <span className="ml-2 rounded-full bg-surface-hover px-2 py-0.5 text-xs text-content-muted">
-                        Missed
-                      </span>
-                    )}
-                  </p>
-                  <p className="mt-0.5 truncate text-sm text-content-muted tabular">
-                    {new Date(entry.date).toLocaleDateString('de-DE', {
-                      day: '2-digit',
-                      month: '2-digit',
-                      year: 'numeric',
-                    })}
-                    {' · '}
-                    {entry.plan_title}
-                  </p>
+                  </div>
                 </div>
-                <div className="shrink-0 text-right text-sm tabular">
-                  {entry.duration && <p className="text-content-muted">{entry.duration}</p>}
-                  {/* The weight of that day, not today's — the reason
-                      workout.body_weight exists at all. */}
-                  {entry.body_weight !== null && entry.body_weight !== undefined && (
-                    <p className="text-content-faint">{entry.body_weight} kg</p>
-                  )}
-                </div>
-              </div>
 
-              {entry.attended && (
-                <p className="mt-3 text-sm text-content-faint tabular">
-                  {entry.set_count} sets · {entry.exercise_count} exercises
-                </p>
-              )}
-              {entry.comment && (
-                <p className="mt-2 text-sm text-content-muted">{entry.comment}</p>
-              )}
-            </Card>
+                {entry.attended && (
+                  <p className="mt-3 text-sm text-content-faint tabular">
+                    {entry.set_count} sets · {entry.exercise_count} exercises
+                  </p>
+                )}
+                {entry.comment && (
+                  <p className="mt-2 text-sm text-content-muted">{entry.comment}</p>
+                )}
+              </Card>
+            </Link>
           </li>
         ))}
       </ul>

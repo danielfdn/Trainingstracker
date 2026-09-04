@@ -8,6 +8,7 @@ import { NotFound } from './pages/NotFound'
 import { PlanEditor } from './pages/PlanEditor'
 import { PlanList } from './pages/PlanList'
 import { ProfilePicker } from './pages/ProfilePicker'
+import { SessionDetail } from './pages/SessionDetail'
 import { Progress } from './pages/Progress'
 import { TrainingLog } from './pages/TrainingLog'
 import { UserSettings } from './pages/UserSettings'
@@ -36,6 +37,9 @@ export const router = createBrowserRouter([
       { path: 'workout/live', element: <LiveWorkout /> },
       { path: 'log', element: <TrainingLog /> },
       { path: 'log/progress', element: <Progress /> },
+      // After the static sibling above: a workout id can never read
+      // "progress", and the static segment ranks higher anyway.
+      { path: 'log/:workoutId', element: <SessionDetail /> },
       { path: 'settings', element: <UserSettings /> },
     ],
   },
