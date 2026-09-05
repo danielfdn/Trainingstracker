@@ -1,0 +1,19 @@
+{
+  "name": "trainingstracker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dev-Runner fuer das Root-Projekt: startet Backend und Frontend zusammen.",
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "dev": "concurrently --names \"api,web\" --prefix-colors \"cyan,magenta\" --kill-others-on-fail \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "uv run uvicorn app.main:app --reload --app-dir backend --host 127.0.0.1 --port 8000",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "test": "uv run pytest"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

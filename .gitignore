@@ -230,7 +230,6 @@ OVERVIEW.md
 node_modules/
 
 # Other files
-package.json
 OVERVIEW.md
 UMBAU.md
 trainingstracker.md
