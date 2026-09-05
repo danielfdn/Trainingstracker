@@ -9,7 +9,7 @@ from app.schemas.exercise import (
     ExerciseWithSets,
 )
 
-router = APIRouter(prefix"/exer=cises", tags=["exercises"])
+router = APIRouter(prefix="/exercises", tags=["exercises"])
 
 
 @router.post("", response_model=ExercisePublic, status_code=status.HTTP_201_CREATED)
