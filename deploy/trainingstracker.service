@@ -1,0 +1,43 @@
+# systemd-Unit fuer den Trainingstracker auf dem Raspberry Pi.
+#
+# Installieren (Pfade und User ggf. anpassen - hier: Benutzer "kali",
+# Klon unter /home/kali/Trainingstracker):
+#
+#   sudo cp deploy/trainingstracker.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now trainingstracker
+#
+# Danach laeuft die App ohne offene Terminal-Sitzung und startet nach jedem
+# Reboot von selbst.
+
+[Unit]
+Description=Trainingstracker (FastAPI + PWA)
+# Erst starten, wenn das Netz wirklich steht und die Datenbank laeuft -
+# sonst scheitert der erste Verbindungsversuch beim Booten.
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+[Service]
+Type=exec
+User=kali
+Group=kali
+WorkingDirectory=/home/kali/Trainingstracker/backend
+
+# Absoluter Pfad noetig: systemd startet ohne die PATH-Anpassungen aus
+# ~/.profile, "uv" allein wuerde nicht gefunden.
+ExecStart=/home/kali/.local/bin/uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+# An 127.0.0.1 gebunden, nicht 0.0.0.0: nach aussen geht es ausschliesslich
+# ueber "tailscale serve --bg 8000". Die API hat keine Authentifizierung -
+# wer sie erreicht, kann jedes Profil lesen und loeschen.
+
+Restart=always
+RestartSec=5
+
+# Log landet im Journal: journalctl -u trainingstracker -f
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

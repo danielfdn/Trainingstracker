@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 
 import { usersQuery } from '../api/queries'
+import { parseDecimalInput } from '../api/types'
 import { useCreateUser } from '../api/mutations'
 import { isInstalled, lastProfile } from '../lib/lastProfile'
 import { Button, ErrorNote, Field, Loading, Modal, PageTitle } from '../components/ui'
@@ -81,7 +82,7 @@ function NewProfileForm({ onClose }: { onClose: () => void }) {
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
     createUser.mutate(
-      { name: name.trim(), age: Number(age), weight: Number(weight) },
+      { name: name.trim(), age: Number(age), weight: parseDecimalInput(weight) ?? 0 },
       // Straight into the new profile — creating one is always the first
       // step of using it.
       { onSuccess: (user) => navigate(`/u/${user.id}`) },
@@ -112,11 +113,9 @@ function NewProfileForm({ onClose }: { onClose: () => void }) {
           />
           <Field
             label="Weight (kg)"
-            type="number"
+            // See parseDecimalInput: type="number" drops comma decimals.
+            type="text"
             inputMode="decimal"
-            step="0.1"
-            min={1}
-            max={499}
             value={weight}
             onChange={(e) => setWeight(e.target.value)}
             hint="Recorded with each workout"

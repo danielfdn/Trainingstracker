@@ -109,6 +109,9 @@ class WorkoutSyncSet(BaseModel):
     exercise_id: int
     repetitions: int = Field(gt=0, le=1000)
     weight: float | None = Field(default=None, ge=0, le=1000)
+    # Der Platz im Trainingstag. None fuer freie Trainings und fuer Uebungen,
+    # die spontan zusaetzlich gemacht wurden.
+    training_day_exercise_id: int | None = None
 
 
 class WorkoutSync(BaseModel):

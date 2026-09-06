@@ -15,7 +15,7 @@ import {
   PageTitle,
   TextArea,
 } from '../components/ui'
-import { formatSet, groupByExercise } from '../lib/sets'
+import { formatSet, groupBySlot, occurrencesOf } from '../lib/sets'
 import { useUserId } from '../lib/useUserId'
 
 /**
@@ -41,7 +41,7 @@ export function SessionDetail() {
   if (error) return <ErrorNote error={error} onRetry={() => void refetch()} />
 
   const entry = log?.find((row) => row.id === workoutId)
-  const groups = groupByExercise(workout.sets)
+  const groups = groupBySlot(workout.sets)
   const date = new Date(workout.date).toLocaleDateString('de-DE', {
     weekday: 'long',
     day: '2-digit',
@@ -76,7 +76,9 @@ export function SessionDetail() {
           />
           <Fact
             label="Volume"
-            value={`${workout.sets.length} sets · ${groups.length} exercises`}
+            value={`${workout.sets.length} sets · ${
+              new Set(groups.map((group) => group.exerciseId)).size
+            } exercises`}
           />
         </dl>
       </Card>
@@ -95,10 +97,14 @@ export function SessionDetail() {
         <div className="grid gap-4">
           {groups.map((group) => {
             const exercise = catalog?.find((row) => row.id === group.exerciseId)
+            const name = exercise?.title ?? `Exercise ${group.exerciseId}`
+            // Only number them when the exercise really does appear more than
+            // once — a lone "Bench Press (1)" would just be noise.
+            const repeated = occurrencesOf(groups, group.exerciseId) > 1
             return (
               <ExerciseCard
-                key={group.exerciseId}
-                title={exercise?.title ?? `Exercise ${group.exerciseId}`}
+                key={group.key}
+                title={repeated ? `${name} (${group.occurrence})` : name}
                 meta={`${group.sets.length} sets`}
               >
                 {group.sets.map((set, index) => (

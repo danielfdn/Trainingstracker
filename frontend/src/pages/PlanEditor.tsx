@@ -67,7 +67,7 @@ export function PlanEditor() {
 
             <ul className="mt-3 divide-y divide-border">
               {day.exercise_links.map((link) => (
-                <PlanExerciseRow key={link.exercise_id} link={link} />
+                <PlanExerciseRow key={link.id} link={link} />
               ))}
             </ul>
 
@@ -102,11 +102,6 @@ export function PlanEditor() {
         <ExercisePicker
           userId={userId}
           trainingDayId={pickerFor}
-          taken={
-            plan.training_days
-              .find((day) => day.id === pickerFor)
-              ?.exercise_links.map((link) => link.exercise_id) ?? []
-          }
           nextPosition={
             (plan.training_days.find((day) => day.id === pickerFor)?.exercise_links.length ?? 0) + 1
           }
@@ -126,7 +121,7 @@ function PlanExerciseRow({ link }: { link: TrainingDayExercise }) {
   const change = (patch: { target_sets?: number; target_reps_min?: number; target_reps_max?: number }) =>
     update.mutate({
       trainingDayId: link.training_day_id,
-      exerciseId: link.exercise_id,
+      linkId: link.id,
       ...patch,
     })
 
@@ -175,7 +170,7 @@ function PlanExerciseRow({ link }: { link: TrainingDayExercise }) {
           onClick={() =>
             remove.mutate({
               trainingDayId: link.training_day_id,
-              exerciseId: link.exercise_id,
+              linkId: link.id,
             })
           }
         >
@@ -196,13 +191,11 @@ function PlanExerciseRow({ link }: { link: TrainingDayExercise }) {
 export function ExercisePicker({
   userId,
   trainingDayId,
-  taken,
   nextPosition,
   onClose,
 }: {
   userId: number
   trainingDayId: number
-  taken: number[]
   nextPosition: number
   onClose: () => void
 }) {
@@ -212,7 +205,7 @@ export function ExercisePicker({
   const [title, setTitle] = useState('')
   const [weighted, setWeighted] = useState('true')
 
-  const available = (exercises ?? []).filter((exercise) => !taken.includes(exercise.id))
+  const available = exercises ?? []
 
   const attach = (exercise_id: number) =>
     add.mutate({ trainingDayId, exercise_id, position: nextPosition }, { onSuccess: onClose })

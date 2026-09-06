@@ -105,6 +105,29 @@ cd backend && uv run uvicorn app.main:app --port 8000
 every frontend change**. Without the build you get a working API and nothing
 else.
 
+### Running it as a service
+
+Started by hand, the app stops as soon as you close the terminal and does not
+come back after a reboot. `deploy/trainingstracker.service` fixes both. Adjust
+the user and paths inside it if your clone is not at
+`/home/kali/Trainingstracker`, then:
+
+```bash
+sudo cp deploy/trainingstracker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now trainingstracker
+```
+
+Day to day:
+
+```bash
+systemctl status trainingstracker
+journalctl -u trainingstracker -f     # follow the log
+sudo systemctl restart trainingstracker
+```
+
+Restart it after every `npm run build`, so the new `frontend/dist` is picked up.
+
 ### Exposing it over Tailscale
 
 ```bash
@@ -123,6 +146,7 @@ git pull
 uv sync && npm install && npm --prefix frontend install
 cd backend && uv run alembic upgrade head && cd ..
 npm run build
+sudo systemctl restart trainingstracker   # if installed as a service
 ```
 
 ## Layout

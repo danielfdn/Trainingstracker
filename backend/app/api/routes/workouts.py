@@ -141,6 +141,16 @@ def sync_workout(
                 ),
             )
 
+    # Die Plaetze des Trainingstages, um die Satz-Zuordnung zu pruefen.
+    # Ein Satz darf nur auf einen Platz zeigen, der zu genau diesem Tag
+    # gehoert und dieselbe Uebung traegt - sonst stuende in der Historie
+    # "Bankdruecken" unter dem Platz "Kniebeuge".
+    plaetze = {}
+    if einheit.training_day_id is not None:
+        tag_mit_uebungen = day_repo.get_with_exercises(einheit.training_day_id)
+        if tag_mit_uebungen is not None:
+            plaetze = {link.id: link for link in tag_mit_uebungen.exercise_links}
+
     workout = Workout(
         date=einheit.date,
         # Wer eine Einheit uebertraegt, hat sie absolviert.
@@ -178,11 +188,30 @@ def sync_workout(
                     "weight muss leer bleiben"
                 ),
             )
+        if satz.training_day_exercise_id is not None:
+            platz = plaetze.get(satz.training_day_exercise_id)
+            if platz is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"Platz {satz.training_day_exercise_id} gehoert nicht "
+                        f"zu Trainingstag {einheit.training_day_id}"
+                    ),
+                )
+            if platz.exercise_id != satz.exercise_id:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"Platz {platz.id} traegt Uebung {platz.exercise_id}, "
+                        f"der Satz aber Uebung {satz.exercise_id}"
+                    ),
+                )
         workout.sets.append(
             Set(
                 exercise_id=satz.exercise_id,
                 repetitions=satz.repetitions,
                 weight=satz.weight,
+                training_day_exercise_id=satz.training_day_exercise_id,
             )
         )
 

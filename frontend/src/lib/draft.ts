@@ -24,6 +24,17 @@ export type DraftSet = {
   exercise_id: number
   repetitions: number
   weight: number | null
+  /**
+   * Which slot of the training day this set belongs to.
+   *
+   * The same exercise may appear twice on a day — heavy first, light last —
+   * and the two are only distinguishable by their slot. null for a custom
+   * session and for exercises added on the spot, which have no slot.
+   *
+   * Optional on the type so a draft written by an older version of the app
+   * still loads: those sets simply have no slot.
+   */
+  training_day_exercise_id?: number | null
 }
 
 export type WorkoutDraft = {

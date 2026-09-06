@@ -25,6 +25,23 @@ def _hole_tag(training_day_id: int, repo: TrainingDayRepoDep) -> TrainingDay:
     return tag
 
 
+def _hole_platz(
+    training_day_id: int, link_id: int, repo: TrainingDayRepoDep
+) -> TrainingDayExercise:
+    """Der Platz, samt Pruefung dass er wirklich zu diesem Tag gehoert.
+
+    Ohne die Pruefung koennte man mit der id eines fremden Platzes die
+    Vorgabe eines anderen Trainingstages aendern.
+    """
+    link = repo.get_link(link_id)
+    if link is None or link.training_day_id != training_day_id:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Platz {link_id} gehoert nicht zu Trainingstag {training_day_id}",
+        )
+    return link
+
+
 @router.post("", response_model=TrainingDayPublic, status_code=status.HTTP_201_CREATED)
 def create_training_day(
     day_in: TrainingDayCreate,
@@ -142,33 +159,30 @@ def add_exercise_to_day(
             status_code=422,
             detail=f"Uebung '{uebung.title}' gehoert nicht zu User {plan.user_id}",
         )
-    if repo.get_link(tag.id, uebung.id) is not None:
-        raise HTTPException(
-            status_code=409,
-            detail=f"'{uebung.title}' steht an diesem Tag bereits auf dem Plan",
-        )
+    # Bewusst keine Duplikatspruefung: dieselbe Uebung darf an einem Tag
+    # mehrfach stehen (schwer am Anfang, leicht am Ende). Jeder Eintrag ist
+    # ein eigener Platz mit eigener Vorgabe.
     return repo.add_exercise(
         TrainingDayExercise(training_day_id=tag.id, **link_in.model_dump())
     )
 
 
 @router.patch(
-    "/{training_day_id}/exercises/{exercise_id}",
+    "/{training_day_id}/exercises/{link_id}",
     response_model=TrainingDayExercisePublic,
 )
 def update_day_exercise(
     training_day_id: int,
-    exercise_id: int,
+    link_id: int,
     link_in: TrainingDayExerciseUpdate,
     repo: TrainingDayRepoDep,
 ) -> TrainingDayExercise:
-    """Aendert die Vorgabe, z.B. von 3x8-10 auf 4x6-8."""
-    link = repo.get_link(training_day_id, exercise_id)
-    if link is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Uebung {exercise_id} steht nicht auf Trainingstag {training_day_id}",
-        )
+    """Aendert die Vorgabe, z.B. von 3x8-10 auf 4x6-8.
+
+    Adressiert wird der Platz ueber seine id, nicht ueber die Uebung: an
+    einem Tag koennen mehrere Plaetze dieselbe Uebung tragen.
+    """
+    link = _hole_platz(training_day_id, link_id, repo)
     daten = link_in.model_dump(exclude_unset=True)
     minimum = daten.get("target_reps_min", link.target_reps_min)
     maximum = daten.get("target_reps_max", link.target_reps_max)
@@ -181,18 +195,13 @@ def update_day_exercise(
 
 
 @router.delete(
-    "/{training_day_id}/exercises/{exercise_id}",
+    "/{training_day_id}/exercises/{link_id}",
     status_code=status.HTTP_204_NO_CONTENT,
 )
 def remove_exercise_from_day(
-    training_day_id: int, exercise_id: int, repo: TrainingDayRepoDep
+    training_day_id: int, link_id: int, repo: TrainingDayRepoDep
 ) -> None:
-    """Nimmt die Uebung vom Plan. Der Katalogeintrag und die bereits
-    protokollierten Saetze bleiben bestehen."""
-    link = repo.get_link(training_day_id, exercise_id)
-    if link is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Uebung {exercise_id} steht nicht auf Trainingstag {training_day_id}",
-        )
-    repo.remove_exercise(link)
+    """Nimmt den Platz vom Plan. Der Katalogeintrag und die bereits
+    protokollierten Saetze bleiben bestehen - die Saetze verlieren nur ihren
+    Bezug auf diesen Platz."""
+    repo.remove_exercise(_hole_platz(training_day_id, link_id, repo))

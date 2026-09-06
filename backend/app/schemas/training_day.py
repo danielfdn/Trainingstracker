@@ -36,6 +36,9 @@ class TrainingDayExerciseUpdate(BaseModel):
 class TrainingDayExercisePublic(TrainingDayExerciseBase):
     model_config = ConfigDict(from_attributes=True)
 
+    # Eigene id, weil dieselbe Uebung an einem Tag mehrfach stehen darf -
+    # (training_day_id, exercise_id) ist dann nicht mehr eindeutig.
+    id: int
     training_day_id: int
     exercise_id: int
     exercise: ExercisePublic

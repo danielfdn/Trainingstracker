@@ -10,6 +10,9 @@ class SetBase(BaseModel):
 class SetCreate(SetBase):
     exercise_id: int
     workout_id: int
+    # Auf welchem Platz des Trainingstages der Satz gemacht wurde. None bei
+    # freiem Training und bei Uebungen, die nicht auf dem Plan standen.
+    training_day_exercise_id: int | None = None
 
 
 class SetUpdate(BaseModel):
@@ -23,3 +26,4 @@ class SetPublic(SetBase):
     id: int
     exercise_id: int
     workout_id: int
+    training_day_exercise_id: int | None = None

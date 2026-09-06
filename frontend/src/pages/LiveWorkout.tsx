@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 
 import { useSyncWorkout } from '../api/mutations'
 import { exercisesQuery, planQuery } from '../api/queries'
+import { parseDecimalInput } from '../api/types'
 import type { Exercise } from '../api/types'
 import { ExerciseCard, SetRow } from '../components/SetList'
 import { Button, Card, EmptyState, Modal, Select, TextArea } from '../components/ui'
@@ -54,9 +55,12 @@ export function LiveWorkout() {
   // A planned day brings its exercises with it; a custom session starts empty
   // and grows as you pick.
   const planned = day?.exercise_links ?? []
+  // Anything without a slot was not on the plan: a custom session, or an
+  // exercise added on the spot. Deciding this by slot rather than by exercise
+  // matters now that the plan may list the same exercise twice.
   const extraIds = draft.sets
+    .filter((set) => set.training_day_exercise_id == null)
     .map((set) => set.exercise_id)
-    .filter((id) => !planned.some((link) => link.exercise_id === id))
   const extras = [...new Set(extraIds)]
 
   const finish = () => {
@@ -75,6 +79,7 @@ export function LiveWorkout() {
           // undefined, not null: a bodyweight exercise must carry no weight.
           weight: set.weight ?? undefined,
           repetitions: set.repetitions,
+          training_day_exercise_id: set.training_day_exercise_id ?? null,
         })),
       },
       {
@@ -95,8 +100,9 @@ export function LiveWorkout() {
       <div className="grid gap-4">
         {planned.map((link) => (
           <ExerciseBlock
-            key={link.exercise_id}
+            key={link.id}
             userId={userId}
+            linkId={link.id}
             exerciseId={link.exercise_id}
             title={link.exercise.title}
             weighted={link.exercise.weighted}
@@ -113,6 +119,7 @@ export function LiveWorkout() {
             <ExerciseBlock
               key={exerciseId}
               userId={userId}
+              linkId={null}
               exerciseId={exerciseId}
               title={exercise?.title ?? `Exercise ${exerciseId}`}
               weighted={exercise?.weighted ?? true}
@@ -132,7 +139,13 @@ export function LiveWorkout() {
             ...draft,
             sets: [
               ...draft.sets,
-              { key: crypto.randomUUID(), exercise_id: exerciseId, repetitions: 0, weight: null },
+              {
+                key: crypto.randomUUID(),
+                exercise_id: exerciseId,
+                repetitions: 0,
+                weight: null,
+                training_day_exercise_id: null,
+              },
             ],
           })
         }
@@ -267,6 +280,7 @@ function targetText(sets: number, min: number | undefined, max: number | undefin
 
 /** One exercise with its set rows. */
 function ExerciseBlock({
+  linkId,
   exerciseId,
   title,
   weighted,
@@ -276,6 +290,9 @@ function ExerciseBlock({
   onChange,
 }: {
   userId: number
+  /** The slot of the training day this card logs into, or null when the
+   *  exercise is not on the plan (custom session, or added on the spot). */
+  linkId: number | null
   exerciseId: number
   title: string
   weighted: boolean
@@ -284,7 +301,14 @@ function ExerciseBlock({
   draft: WorkoutDraft
   onChange: (draft: WorkoutDraft) => void
 }) {
-  const sets = draft.sets.filter((set) => set.exercise_id === exerciseId)
+  // Scoped by slot, so "Bench Press 5×5" and "Bench Press 3×12" on the same
+  // day keep their own rows instead of mirroring each other. Cards without a
+  // slot collect the sets that have none, by exercise.
+  const sets = draft.sets.filter((set) =>
+    linkId === null
+      ? set.training_day_exercise_id == null && set.exercise_id === exerciseId
+      : set.training_day_exercise_id === linkId,
+  )
 
   // Empty rows up to the planned number of sets, so the usual case is typing
   // numbers rather than tapping "add" first.
@@ -312,6 +336,7 @@ function ExerciseBlock({
           exercise_id: exerciseId,
           repetitions: patch.repetitions ?? 0,
           weight: patch.weight ?? null,
+          training_day_exercise_id: linkId,
         },
       ],
     })
@@ -325,7 +350,13 @@ function ExerciseBlock({
       ...draft,
       sets: [
         ...draft.sets,
-        { key: crypto.randomUUID(), exercise_id: exerciseId, repetitions: 0, weight: null },
+        {
+          key: crypto.randomUUID(),
+          exercise_id: exerciseId,
+          repetitions: 0,
+          weight: null,
+          training_day_exercise_id: linkId,
+        },
       ],
     })
 
@@ -355,14 +386,14 @@ function ExerciseBlock({
           {weighted && (
             <input
               className={box}
-              type="number"
+              // Text, not number: a comma is what the German keyboard offers
+              // and what formatWeight prints, but type="number" reads "82,5"
+              // as an empty string. parseDecimalInput takes either separator.
+              type="text"
               inputMode="decimal"
-              step="0.5"
               placeholder="kg"
               defaultValue={set?.weight ?? ''}
-              onBlur={(e) =>
-                write(index, { weight: e.target.value === '' ? null : Number(e.target.value) })
-              }
+              onBlur={(e) => write(index, { weight: parseDecimalInput(e.target.value) })}
             />
           )}
           {set && (

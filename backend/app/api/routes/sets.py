@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, status
 from app.api.deps import (
     ExerciseRepoDep,
     SetRepoDep,
+    TrainingDayRepoDep,
     WorkoutPlanRepoDep,
     WorkoutRepoDep,
 )
@@ -19,6 +20,7 @@ def create_set(
     exercise_repo: ExerciseRepoDep,
     workout_repo: WorkoutRepoDep,
     plan_repo: WorkoutPlanRepoDep,
+    day_repo: TrainingDayRepoDep,
 ) -> Set:
     """Protokolliert einen absolvierten Satz innerhalb einer Trainingseinheit."""
     exercise = exercise_repo.get(set_in.exercise_id)
@@ -52,6 +54,26 @@ def create_set(
             status_code=422,
             detail=f"Uebung '{exercise.title}' ist nicht gewichtsbasiert - weight muss leer bleiben",
         )
+    # Dieselbe Pruefung wie in POST /workouts/sync: der Platz muss zum
+    # Trainingstag dieser Einheit gehoeren und dieselbe Uebung tragen.
+    if set_in.training_day_exercise_id is not None:
+        platz = day_repo.get_link(set_in.training_day_exercise_id)
+        if platz is None or platz.training_day_id != workout.training_day_id:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Platz {set_in.training_day_exercise_id} gehoert nicht "
+                    f"zum Trainingstag dieser Einheit"
+                ),
+            )
+        if platz.exercise_id != set_in.exercise_id:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Platz {platz.id} traegt Uebung {platz.exercise_id}, "
+                    f"der Satz aber Uebung {set_in.exercise_id}"
+                ),
+            )
     return repo.create(Set(**set_in.model_dump()))
 
 

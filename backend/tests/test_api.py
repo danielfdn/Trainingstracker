@@ -532,12 +532,12 @@ def test_vorgabe_laesst_sich_aendern(client: TestClient) -> None:
     bank = _create_exercise(client, user_id, "Bankdruecken")
     tag = _create_training_day(client, plan_id, 1, "Push")
 
-    client.post(
+    platz = client.post(
         f"/api/v1/training-days/{tag}/exercises",
         json={"exercise_id": bank, "target_sets": 3, "target_reps_min": 8, "target_reps_max": 10},
-    )
+    ).json()["id"]
     geaendert = client.patch(
-        f"/api/v1/training-days/{tag}/exercises/{bank}",
+        f"/api/v1/training-days/{tag}/exercises/{platz}",
         json={"target_sets": 4, "target_reps_min": 6, "target_reps_max": 8},
     )
     assert geaendert.status_code == 200
@@ -545,29 +545,81 @@ def test_vorgabe_laesst_sich_aendern(client: TestClient) -> None:
 
     # verdrehte Spanne wird abgelehnt
     kaputt = client.patch(
-        f"/api/v1/training-days/{tag}/exercises/{bank}",
+        f"/api/v1/training-days/{tag}/exercises/{platz}",
         json={"target_reps_min": 12, "target_reps_max": 5},
     )
     assert kaputt.status_code == 422
 
 
-def test_uebung_steht_pro_tag_nur_einmal(client: TestClient) -> None:
+def test_uebung_darf_pro_tag_mehrfach_stehen(client: TestClient) -> None:
+    """Bankdruecken schwer am Anfang, leicht am Ende - zwei eigene Plaetze."""
     user_id = _create_user(client)
     plan_id = _create_plan(client, user_id)
     bank = _create_exercise(client, user_id, "Bankdruecken")
     tag = _create_training_day(client, plan_id, 1, "Push")
 
+    schwer = client.post(
+        f"/api/v1/training-days/{tag}/exercises",
+        json={"exercise_id": bank, "position": 1, "target_sets": 5, "target_reps_min": 5},
+    )
+    leicht = client.post(
+        f"/api/v1/training-days/{tag}/exercises",
+        json={"exercise_id": bank, "position": 2, "target_sets": 3, "target_reps_min": 12},
+    )
+    assert schwer.status_code == 201
+    assert leicht.status_code == 201
+    # Zwei Plaetze, dieselbe Uebung, eigene ids und eigene Vorgaben.
+    assert schwer.json()["id"] != leicht.json()["id"]
+    assert schwer.json()["exercise_id"] == leicht.json()["exercise_id"] == bank
+
+    tag_gelesen = client.get(f"/api/v1/training-days/{tag}").json()
+    assert len(tag_gelesen["exercise_links"]) == 2
+    assert [link["target_sets"] for link in tag_gelesen["exercise_links"]] == [5, 3]
+
+
+def test_platz_laesst_sich_einzeln_entfernen(client: TestClient) -> None:
+    """Einen der beiden Plaetze streichen laesst den anderen unberuehrt."""
+    user_id = _create_user(client)
+    plan_id = _create_plan(client, user_id)
+    bank = _create_exercise(client, user_id, "Bankdruecken")
+    tag = _create_training_day(client, plan_id, 1, "Push")
+
+    erster = client.post(
+        f"/api/v1/training-days/{tag}/exercises", json={"exercise_id": bank}
+    ).json()["id"]
+    zweiter = client.post(
+        f"/api/v1/training-days/{tag}/exercises", json={"exercise_id": bank}
+    ).json()["id"]
+
     assert (
-        client.post(
-            f"/api/v1/training-days/{tag}/exercises", json={"exercise_id": bank}
+        client.delete(f"/api/v1/training-days/{tag}/exercises/{erster}").status_code
+        == 204
+    )
+    uebrig = client.get(f"/api/v1/training-days/{tag}").json()["exercise_links"]
+    assert [link["id"] for link in uebrig] == [zweiter]
+
+
+def test_fremder_platz_wird_abgelehnt(client: TestClient) -> None:
+    """Die id eines Platzes aus einem anderen Tag darf nichts aendern."""
+    user_id = _create_user(client)
+    plan_id = _create_plan(client, user_id)
+    bank = _create_exercise(client, user_id, "Bankdruecken")
+    push = _create_training_day(client, plan_id, 1, "Push")
+    pull = _create_training_day(client, plan_id, 2, "Pull")
+
+    platz = client.post(
+        f"/api/v1/training-days/{push}/exercises", json={"exercise_id": bank}
+    ).json()["id"]
+
+    assert (
+        client.patch(
+            f"/api/v1/training-days/{pull}/exercises/{platz}", json={"target_sets": 4}
         ).status_code
-        == 201
+        == 404
     )
     assert (
-        client.post(
-            f"/api/v1/training-days/{tag}/exercises", json={"exercise_id": bank}
-        ).status_code
-        == 409
+        client.delete(f"/api/v1/training-days/{pull}/exercises/{platz}").status_code
+        == 404
     )
 
 

@@ -278,7 +278,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/training-days/{training_day_id}/exercises/{exercise_id}": {
+    "/api/v1/training-days/{training_day_id}/exercises/{link_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -290,17 +290,21 @@ export interface paths {
         post?: never;
         /**
          * Remove Exercise From Day
-         * @description Nimmt die Uebung vom Plan. Der Katalogeintrag und die bereits
-         *     protokollierten Saetze bleiben bestehen.
+         * @description Nimmt den Platz vom Plan. Der Katalogeintrag und die bereits
+         *     protokollierten Saetze bleiben bestehen - die Saetze verlieren nur ihren
+         *     Bezug auf diesen Platz.
          */
-        delete: operations["remove_exercise_from_day_api_v1_training_days__training_day_id__exercises__exercise_id__delete"];
+        delete: operations["remove_exercise_from_day_api_v1_training_days__training_day_id__exercises__link_id__delete"];
         options?: never;
         head?: never;
         /**
          * Update Day Exercise
          * @description Aendert die Vorgabe, z.B. von 3x8-10 auf 4x6-8.
+         *
+         *     Adressiert wird der Platz ueber seine id, nicht ueber die Uebung: an
+         *     einem Tag koennen mehrere Plaetze dieselbe Uebung tragen.
          */
-        patch: operations["update_day_exercise_api_v1_training_days__training_day_id__exercises__exercise_id__patch"];
+        patch: operations["update_day_exercise_api_v1_training_days__training_day_id__exercises__link_id__patch"];
         trace?: never;
     };
     "/api/v1/exercises": {
@@ -710,6 +714,8 @@ export interface components {
             exercise_id: number;
             /** Workout Id */
             workout_id: number;
+            /** Training Day Exercise Id */
+            training_day_exercise_id?: number | null;
         };
         /** SetPublic */
         SetPublic: {
@@ -723,6 +729,8 @@ export interface components {
             exercise_id: number;
             /** Workout Id */
             workout_id: number;
+            /** Training Day Exercise Id */
+            training_day_exercise_id?: number | null;
         };
         /** SetUpdate */
         SetUpdate: {
@@ -783,6 +791,8 @@ export interface components {
             target_reps_min?: number | null;
             /** Target Reps Max */
             target_reps_max?: number | null;
+            /** Id */
+            id: number;
             /** Training Day Id */
             training_day_id: number;
             /** Exercise Id */
@@ -1141,6 +1151,8 @@ export interface components {
             repetitions: number;
             /** Weight */
             weight?: number | null;
+            /** Training Day Exercise Id */
+            training_day_exercise_id?: number | null;
         };
         /**
          * WorkoutUpdate
@@ -1948,13 +1960,13 @@ export interface operations {
             };
         };
     };
-    remove_exercise_from_day_api_v1_training_days__training_day_id__exercises__exercise_id__delete: {
+    remove_exercise_from_day_api_v1_training_days__training_day_id__exercises__link_id__delete: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 training_day_id: number;
-                exercise_id: number;
+                link_id: number;
             };
             cookie?: never;
         };
@@ -1978,13 +1990,13 @@ export interface operations {
             };
         };
     };
-    update_day_exercise_api_v1_training_days__training_day_id__exercises__exercise_id__patch: {
+    update_day_exercise_api_v1_training_days__training_day_id__exercises__link_id__patch: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 training_day_id: number;
-                exercise_id: number;
+                link_id: number;
             };
             cookie?: never;
         };

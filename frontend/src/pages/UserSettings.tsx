@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 
 import { useDeleteUser, useUpdateUser } from '../api/mutations'
 import { userQuery } from '../api/queries'
+import { parseDecimalInput } from '../api/types'
 import { Button, Card, ErrorNote, Field, Loading, PageTitle } from '../components/ui'
 import { useUserId } from '../lib/useUserId'
 
@@ -35,7 +36,7 @@ export function UserSettings() {
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
     updateUser.mutate(
-      { name: form.name.trim(), age: Number(form.age), weight: Number(form.weight) },
+      { name: form.name.trim(), age: Number(form.age), weight: parseDecimalInput(form.weight) ?? 0 },
       { onSuccess: () => setSaved(true) },
     )
   }
@@ -57,9 +58,9 @@ export function UserSettings() {
             />
             <Field
               label="Weight (kg)"
-              type="number"
+              // See parseDecimalInput: type="number" drops comma decimals.
+              type="text"
               inputMode="decimal"
-              step="0.1"
               value={form.weight}
               onChange={(e) => set({ weight: e.target.value })}
             />

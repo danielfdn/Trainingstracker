@@ -33,6 +33,25 @@ export function toNumber(value: string | number | null | undefined): number | nu
   return Number.isFinite(parsed) ? parsed : null
 }
 
+/**
+ * Reads a decimal the user typed, accepting both separators.
+ *
+ * `formatWeight` prints with a German locale, so the app shows "82,5 kg" —
+ * and on a German keyboard the decimal key *is* a comma. A `type="number"`
+ * input reports an empty string for "82,5", which silently turned every
+ * decimal weight into no weight at all. The inputs are therefore plain text
+ * with `inputMode="decimal"`, and the parsing happens here.
+ *
+ * Returns null for anything that is not a finite number, including "" — the
+ * callers all treat null as "no weight given".
+ */
+export function parseDecimalInput(value: string): number | null {
+  const normalised = value.trim().replace(',', '.')
+  if (normalised === '') return null
+  const parsed = Number(normalised)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 /** Formats a weight for display: "82.5 kg", or a dash when there is none. */
 export function formatWeight(value: string | number | null | undefined): string {
   const parsed = toNumber(value)

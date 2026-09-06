@@ -31,8 +31,14 @@ class TrainingDayRepo(BaseRepo[TrainingDay]):
         )
         return self.session.scalars(statement).first()
 
-    def get_link(self, training_day_id: int, exercise_id: int) -> TrainingDayExercise | None:
-        return self.session.get(TrainingDayExercise, (training_day_id, exercise_id))
+    def get_link(self, link_id: int) -> TrainingDayExercise | None:
+        """Ein Platz im Trainingstag, ueber seine eigene id.
+
+        Frueher ging das ueber (training_day_id, exercise_id) - seit eine
+        Uebung an einem Tag mehrfach stehen darf, ist dieses Paar nicht mehr
+        eindeutig.
+        """
+        return self.session.get(TrainingDayExercise, link_id)
 
     def add_exercise(self, link: TrainingDayExercise) -> TrainingDayExercise:
         self.session.add(link)

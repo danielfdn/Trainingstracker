@@ -180,21 +180,23 @@ export function useAddPlanExercise() {
 export function useUpdatePlanExercise() {
   const qc = useQueryClient()
   return useMutation({
+    // Adressiert wird der Platz, nicht die Uebung: dieselbe Uebung darf an
+    // einem Tag mehrfach stehen, exercise_id ist dort nicht eindeutig.
     mutationFn: ({
       trainingDayId,
-      exerciseId,
+      linkId,
       ...body
     }: {
       trainingDayId: number
-      exerciseId: number
+      linkId: number
       target_sets?: number
       target_reps_min?: number
       target_reps_max?: number
       position?: number
     }) =>
       unwrap(
-        api.PATCH('/api/v1/training-days/{training_day_id}/exercises/{exercise_id}', {
-          params: { path: { training_day_id: trainingDayId, exercise_id: exerciseId } },
+        api.PATCH('/api/v1/training-days/{training_day_id}/exercises/{link_id}', {
+          params: { path: { training_day_id: trainingDayId, link_id: linkId } },
           body,
         }),
       ),
@@ -207,14 +209,14 @@ export function useRemovePlanExercise() {
   return useMutation({
     mutationFn: async ({
       trainingDayId,
-      exerciseId,
+      linkId,
     }: {
       trainingDayId: number
-      exerciseId: number
+      linkId: number
     }) => {
       const { error, response } = await api.DELETE(
-        '/api/v1/training-days/{training_day_id}/exercises/{exercise_id}',
-        { params: { path: { training_day_id: trainingDayId, exercise_id: exerciseId } } },
+        '/api/v1/training-days/{training_day_id}/exercises/{link_id}',
+        { params: { path: { training_day_id: trainingDayId, link_id: linkId } } },
       )
       if (error !== undefined && !response.ok) throw new Error('Could not remove the exercise')
     },
@@ -256,7 +258,12 @@ export function useSyncWorkout(userId: number) {
       started_at: string
       finished_at: string
       comment: string
-      sets: { exercise_id: number; repetitions: number; weight?: number }[]
+      sets: {
+        exercise_id: number
+        repetitions: number
+        weight?: number
+        training_day_exercise_id?: number | null
+      }[]
     }) => unwrap(api.POST('/api/v1/workouts/sync', { body })),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users', userId, 'log'] })
