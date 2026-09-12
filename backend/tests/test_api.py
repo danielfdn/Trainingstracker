@@ -755,3 +755,44 @@ def test_einheit_loeschen_raeumt_das_log_auf(client: TestClient) -> None:
     # Die Saetze gehen mit (ondelete=CASCADE), der Katalogeintrag bleibt.
     assert client.get("/api/v1/sets", params={"workout_id": einheit}).json() == []
     assert client.get(f"/api/v1/exercises/{bank}").status_code == 200
+
+
+def test_luecke_in_den_positionen_laesst_sich_wieder_fuellen(client: TestClient) -> None:
+    """Der Vertrag, auf den sich "Add training day" im Editor stuetzt.
+
+    Der Editor hat die Position lange aus der ANZAHL der Tage abgeleitet
+    (length + 1). Nach dem Loeschen des mittleren von drei Tagen bleiben die
+    Positionen 1 und 3 stehen - length + 1 ist dann 3 und damit belegt, der
+    Aufruf lief in eine 409, und im Editor passierte sichtbar nichts. Zaehlen
+    ist kein Numerieren, sobald in der Mitte etwas wegfallen kann.
+
+    Geprueft wird beides: dass die belegte Position abgelehnt wird, und dass
+    die freie Position 2 die Luecke wirklich schliesst.
+    """
+    user_id = _create_user(client)
+    plan_id = _create_plan(client, user_id)
+    for position in (1, 2, 3):
+        _create_training_day(client, plan_id, position, f"Tag {position}")
+
+    tage = client.get(f"/api/v1/workout-plans/{plan_id}").json()["training_days"]
+    mitte = next(tag["id"] for tag in tage if tag["position"] == 2)
+    assert client.delete(f"/api/v1/training-days/{mitte}").status_code == 204
+
+    belegt = client.post(
+        "/api/v1/training-days",
+        json={"workout_plan_id": plan_id, "position": 3, "workout_type": "Beine"},
+    )
+    assert belegt.status_code == 409
+
+    frei = client.post(
+        "/api/v1/training-days",
+        json={"workout_plan_id": plan_id, "position": 2, "workout_type": "Beine"},
+    )
+    assert frei.status_code == 201, frei.text
+
+    # Und der Plan liefert die Tage nach Position sortiert aus - der Editor
+    # zeigt sie in genau dieser Reihenfolge an.
+    plan = client.get(f"/api/v1/workout-plans/{plan_id}").json()
+    assert [tag["position"] for tag in plan["training_days"]] == [1, 2, 3]
+    assert [tag["workout_type"] for tag in plan["training_days"]] == ["Tag 1", "Beine", "Tag 3"]
+    assert plan["training_days_per_week"] == 3

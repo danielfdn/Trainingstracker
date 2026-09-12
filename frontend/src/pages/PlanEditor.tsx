@@ -25,6 +25,29 @@ import {
 } from '../components/ui'
 import { useUserId } from '../lib/useUserId'
 
+/** A plan covers a week, so the backend caps positions at 7. */
+const MAX_TRAINING_DAYS = 7
+
+/**
+ * The lowest position not yet taken by a training day.
+ *
+ * `days.length + 1` looks like the same thing and is not: delete the middle
+ * day of three and you are left with positions 1 and 3, where length + 1 is
+ * 3 — already taken. The backend rejects that with a 409, and adding a day
+ * silently did nothing at all. Counting is not numbering as soon as anything
+ * can be removed from the middle.
+ *
+ * Filling the gap rather than appending past it also keeps positions dense,
+ * which matters because of the cap: a plan of five days must never run out
+ * of numbers because two were deleted along the way.
+ */
+function nextFreePosition(days: { position: number }[]): number {
+  const taken = new Set(days.map((day) => day.position))
+  let position = 1
+  while (taken.has(position)) position += 1
+  return position
+}
+
 /** `/u/:userId/plans/:planId` — training days, their exercises and targets. */
 export function PlanEditor() {
   const userId = useUserId()
@@ -37,6 +60,8 @@ export function PlanEditor() {
 
   if (isPending) return <Loading />
   if (error) return <ErrorNote error={error} onRetry={() => void refetch()} />
+
+  const voll = plan.training_days.length >= MAX_TRAINING_DAYS
 
   return (
     <>
@@ -84,26 +109,51 @@ export function PlanEditor() {
 
       <Button
         className="mt-6 w-full"
+        disabled={voll || addDay.isPending}
         onClick={() => {
           const workout_type = window.prompt('Name of the training day (e.g. Push)')?.trim()
           if (!workout_type) return
           addDay.mutate({
             workout_plan_id: planId,
-            // Next free position; the backend keeps them unique per plan.
-            position: plan.training_days.length + 1,
+            position: nextFreePosition(plan.training_days),
             workout_type,
           })
         }}
       >
-        Add training day
+        {addDay.isPending ? 'Adding…' : 'Add training day'}
       </Button>
+
+      {voll && (
+        <p className="mt-2 text-sm text-content-faint">
+          A plan holds at most {MAX_TRAINING_DAYS} days — remove one to add another.
+        </p>
+      )}
+      {/* A rejected create used to leave no trace: you typed a name, the
+          dialog closed, and nothing appeared. */}
+      {addDay.error && (
+        <p className="mt-2 text-sm text-negative">
+          Could not add the day: {(addDay.error as Error).message}
+        </p>
+      )}
+      {deleteDay.error && (
+        <p className="mt-2 text-sm text-negative">{(deleteDay.error as Error).message}</p>
+      )}
 
       {pickerFor !== null && (
         <ExercisePicker
           userId={userId}
           trainingDayId={pickerFor}
+          // One past the highest in use, so a new exercise lands at the end
+          // of the day even after one was removed from the middle. Unlike the
+          // days, these positions carry no uniqueness constraint — a clash
+          // would not error, it would just order two exercises arbitrarily.
           nextPosition={
-            (plan.training_days.find((day) => day.id === pickerFor)?.exercise_links.length ?? 0) + 1
+            Math.max(
+              0,
+              ...(plan.training_days
+                .find((day) => day.id === pickerFor)
+                ?.exercise_links.map((link) => link.position) ?? []),
+            ) + 1
           }
           onClose={() => setPickerFor(null)}
         />
