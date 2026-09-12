@@ -7,6 +7,11 @@ React PWA that the backend serves itself in production.
 - **Frontend:** React 19 + Vite + Tailwind, installable as a PWA.
 - **Design decisions and the reasoning behind them:** see `PLAN.md`.
 
+<img width="752" height="809" alt="image" src="https://github.com/user-attachments/assets/9c4d2d5a-ba67-42f3-99e2-e5c6c79691a4" />
+
+<img width="809" height="334" alt="image" src="https://github.com/user-attachments/assets/2fa5a827-04e9-469e-9191-4dc27f21c277" />
+
+
 ---
 
 ## Prerequisites
