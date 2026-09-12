@@ -275,8 +275,7 @@ def test_plan_duplizieren_kopiert_tage_und_vorgaben(client: TestClient) -> None:
         1,
         "Push",
         exercises=[
-            {"exercise_id": bank, "position": 1, "target_sets": 3,
-             "target_reps_min": 8, "target_reps_max": 10}
+            {"exercise_id": bank, "position": 1, "target_sets": 3}
         ],
     )
 
@@ -291,8 +290,7 @@ def test_plan_duplizieren_kopiert_tage_und_vorgaben(client: TestClient) -> None:
     assert tag["workout_type"] == "Push"
     vorgabe = tag["exercise_links"][0]
     assert vorgabe["target_sets"] == 3
-    assert vorgabe["target_reps_min"] == 8
-    assert vorgabe["target_reps_max"] == 10
+    assert vorgabe["position"] == 1
 
 
 def test_kopie_verweist_auf_dieselbe_katalog_uebung(client: TestClient) -> None:

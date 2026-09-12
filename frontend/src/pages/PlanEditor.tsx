@@ -112,71 +112,100 @@ export function PlanEditor() {
   )
 }
 
-/** One planned exercise: the target is editable inline, since that is the
- *  only thing you actually come here to change. */
+/**
+ * One planned exercise: the number of sets, and a button that saves it.
+ *
+ * Saving on blur is what this screen did before, and it lost changes: on the
+ * phone you usually leave the field by tapping somewhere that navigates, and
+ * whether blur still reached the mutation was a race. Worse, nothing ever
+ * told you either way — you typed 4, saw 4, and the plan kept 3. An explicit
+ * button makes the save a thing you do, with a visible result.
+ *
+ * The input is controlled, so the field is the draft and `link.target_sets`
+ * is what the server has. "Save" appears only while the two differ.
+ */
 function PlanExerciseRow({ link }: { link: TrainingDayExercise }) {
   const update = useUpdatePlanExercise()
   const remove = useRemovePlanExercise()
+  const [sets, setSets] = useState(String(link.target_sets))
+  const [saved, setSaved] = useState(false)
 
-  const change = (patch: { target_sets?: number; target_reps_min?: number; target_reps_max?: number }) =>
-    update.mutate({
-      trainingDayId: link.training_day_id,
-      linkId: link.id,
-      ...patch,
-    })
+  const parsed = Number(sets)
+  const valid = Number.isInteger(parsed) && parsed >= 1 && parsed <= 20
+  // Compared against the string form of what the server holds, so re-typing
+  // the same number does not offer a pointless save.
+  const changed = sets !== String(link.target_sets)
+
+  const save = () => {
+    if (!valid || !changed) return
+    update.mutate(
+      { trainingDayId: link.training_day_id, linkId: link.id, target_sets: parsed },
+      { onSuccess: () => setSaved(true) },
+    )
+  }
 
   const numberBox =
     'w-16 min-h-11 rounded-lg border border-border bg-surface px-2 text-center tabular focus:border-accent focus:outline-none'
 
   return (
-    <li className="flex flex-wrap items-center justify-between gap-3 py-3">
-      <span className="min-w-0 flex-1 truncate">
-        {link.exercise.title}
-        {!link.exercise.weighted && (
-          <span className="ml-2 text-xs text-content-faint">bodyweight</span>
-        )}
-      </span>
+    <li className="py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="min-w-0 flex-1 truncate">
+          {link.exercise.title}
+          {!link.exercise.weighted && (
+            <span className="ml-2 text-xs text-content-faint">bodyweight</span>
+          )}
+        </span>
 
-      <div className="flex items-center gap-1.5 text-sm text-content-muted">
-        <input
-          className={numberBox}
-          type="number"
-          inputMode="numeric"
-          min={1}
-          max={20}
-          defaultValue={link.target_sets}
-          onBlur={(e) => change({ target_sets: Number(e.target.value) })}
-        />
-        <span>×</span>
-        <input
-          className={numberBox}
-          type="number"
-          inputMode="numeric"
-          min={1}
-          defaultValue={link.target_reps_min ?? ''}
-          onBlur={(e) => change({ target_reps_min: Number(e.target.value) })}
-        />
-        <span>–</span>
-        <input
-          className={numberBox}
-          type="number"
-          inputMode="numeric"
-          min={1}
-          defaultValue={link.target_reps_max ?? ''}
-          onBlur={(e) => change({ target_reps_max: Number(e.target.value) })}
-        />
-        <Button
-          variant="ghost"
-          onClick={() =>
-            remove.mutate({
-              trainingDayId: link.training_day_id,
-              linkId: link.id,
-            })
-          }
-        >
-          ✕
-        </Button>
+        <div className="flex items-center gap-1.5 text-sm text-content-muted">
+          <input
+            className={numberBox}
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={20}
+            value={sets}
+            aria-label={`Sets for ${link.exercise.title}`}
+            onChange={(e) => {
+              setSets(e.target.value)
+              setSaved(false)
+            }}
+            // Enter saves, so the keyboard's own confirm key does the
+            // obvious thing instead of nothing.
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') save()
+            }}
+          />
+          <span>sets</span>
+
+          {changed ? (
+            <Button variant="primary" disabled={!valid || update.isPending} onClick={save}>
+              {update.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          ) : (
+            saved && <span className="text-positive">Saved</span>
+          )}
+
+          <Button
+            variant="ghost"
+            onClick={() =>
+              remove.mutate({
+                trainingDayId: link.training_day_id,
+                linkId: link.id,
+              })
+            }
+          >
+            ✕
+          </Button>
+        </div>
       </div>
+
+      {changed && !valid && (
+        <p className="mt-1 text-sm text-negative">Sets must be a whole number from 1 to 20.</p>
+      )}
+      {update.error && (
+        <p className="mt-1 text-sm text-negative">{(update.error as Error).message}</p>
+      )}
     </li>
   )
 }

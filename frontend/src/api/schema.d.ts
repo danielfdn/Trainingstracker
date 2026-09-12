@@ -269,7 +269,7 @@ export interface paths {
         put?: never;
         /**
          * Add Exercise To Day
-         * @description Setzt eine Katalog-Uebung mit Vorgabe ("3x8-10") auf den Trainingstag.
+         * @description Setzt eine Katalog-Uebung mit Vorgabe ("3 Saetze") auf den Trainingstag.
          */
         post: operations["add_exercise_to_day_api_v1_training_days__training_day_id__exercises_post"];
         delete?: never;
@@ -299,7 +299,7 @@ export interface paths {
         head?: never;
         /**
          * Update Day Exercise
-         * @description Aendert die Vorgabe, z.B. von 3x8-10 auf 4x6-8.
+         * @description Aendert die Vorgabe, z.B. von 3 auf 4 Saetze.
          *
          *     Adressiert wird der Platz ueber seine id, nicht ueber die Uebung: an
          *     einem Tag koennen mehrere Plaetze dieselbe Uebung tragen.
@@ -768,10 +768,6 @@ export interface components {
              * @default 3
              */
             target_sets: number;
-            /** Target Reps Min */
-            target_reps_min?: number | null;
-            /** Target Reps Max */
-            target_reps_max?: number | null;
             /** Exercise Id */
             exercise_id: number;
         };
@@ -787,10 +783,6 @@ export interface components {
              * @default 3
              */
             target_sets: number;
-            /** Target Reps Min */
-            target_reps_min?: number | null;
-            /** Target Reps Max */
-            target_reps_max?: number | null;
             /** Id */
             id: number;
             /** Training Day Id */
@@ -805,10 +797,6 @@ export interface components {
             position?: number | null;
             /** Target Sets */
             target_sets?: number | null;
-            /** Target Reps Min */
-            target_reps_min?: number | null;
-            /** Target Reps Max */
-            target_reps_max?: number | null;
         };
         /**
          * TrainingDayNested

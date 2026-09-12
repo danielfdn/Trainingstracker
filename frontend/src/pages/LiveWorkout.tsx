@@ -106,7 +106,7 @@ export function LiveWorkout() {
             exerciseId={link.exercise_id}
             title={link.exercise.title}
             weighted={link.exercise.weighted}
-            target={targetText(link.target_sets, link.target_reps_min, link.target_reps_max)}
+            target={`${link.target_sets}×`}
             targetSets={link.target_sets}
             draft={draft}
             onChange={update}
@@ -270,12 +270,6 @@ function SessionNote({
       )}
     </>
   )
-}
-
-function targetText(sets: number, min: number | undefined, max: number | undefined): string {
-  if (min === undefined || min === null) return `${sets}×`
-  if (max === undefined || max === null || max === min) return `${sets}×${min}`
-  return `${sets}×${min}-${max}`
 }
 
 /** One exercise with its set rows. */

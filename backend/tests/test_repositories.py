@@ -71,8 +71,6 @@ def test_get_with_days_laedt_verschachtelt(session: Session) -> None:
             training_day_id=tag.id,
             exercise_id=exercise.id,
             target_sets=3,
-            target_reps_min=8,
-            target_reps_max=10,
         )
     )
 

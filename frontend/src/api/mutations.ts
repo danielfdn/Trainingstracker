@@ -164,8 +164,6 @@ export function useAddPlanExercise() {
       exercise_id: number
       position?: number
       target_sets?: number
-      target_reps_min?: number
-      target_reps_max?: number
     }) =>
       unwrap(
         api.POST('/api/v1/training-days/{training_day_id}/exercises', {
@@ -190,8 +188,6 @@ export function useUpdatePlanExercise() {
       trainingDayId: number
       linkId: number
       target_sets?: number
-      target_reps_min?: number
-      target_reps_max?: number
       position?: number
     }) =>
       unwrap(
@@ -331,7 +327,14 @@ export function useMarkMissed(userId: number) {
   })
 }
 
-/** Undo for the above — the toast's action, not a general delete. */
+/**
+ * Removes a session and its sets.
+ *
+ * Two callers, same thing: the undo on the "missed session" toast, and the
+ * delete button on a past session. Invalidating the whole `log` subtree
+ * matters for the second one — the month comparison is cached under it and
+ * would otherwise keep counting a session that no longer exists.
+ */
 export function useDeleteWorkout(userId: number) {
   const qc = useQueryClient()
   return useMutation({
@@ -339,11 +342,14 @@ export function useDeleteWorkout(userId: number) {
       const { error, response } = await api.DELETE('/api/v1/workouts/{workout_id}', {
         params: { path: { workout_id: workoutId } },
       })
-      if (error !== undefined && !response.ok) throw new Error('Could not undo')
+      if (error !== undefined && !response.ok) throw new Error('Could not delete the session')
     },
-    onSuccess: () => {
+    onSuccess: (_data, workoutId) => {
+      // ['users', id, 'log'] is a prefix: it covers the list, the month
+      // options and every cached month comparison.
       qc.invalidateQueries({ queryKey: ['users', userId, 'log'] })
       qc.invalidateQueries({ queryKey: ['users', userId, 'workouts'] })
+      qc.removeQueries({ queryKey: ['workouts', workoutId] })
     },
   })
 }

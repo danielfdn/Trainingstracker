@@ -125,8 +125,6 @@ def duplicate_workout_plan(
                     exercise_id=link.exercise_id,
                     position=link.position,
                     target_sets=link.target_sets,
-                    target_reps_min=link.target_reps_min,
-                    target_reps_max=link.target_reps_max,
                 )
             )
         kopie.training_days.append(neuer_tag)

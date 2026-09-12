@@ -1,7 +1,34 @@
+import { execSync } from 'node:child_process'
+
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import { VitePWA } from 'vite-plugin-pwa'
+
+/**
+ * A label for the build that is running, shown in the settings screen.
+ *
+ * The reason it exists: an installed PWA keeps its old service worker until
+ * it is fully closed, so the phone can run a bundle from weeks ago while the
+ * server serves the current one. That is indistinguishable from a bug in the
+ * feature you just fixed — we lost an afternoon to exactly that. With this
+ * you read the version off the phone and know which of the two it is.
+ *
+ * The commit takes precedence over the timestamp because it is the thing you
+ * can compare against `git log`. Falls back to the time when git is absent
+ * (a source tarball, a container without the .git directory).
+ */
+function buildId(): string {
+  const zeit = new Date().toISOString().slice(0, 16).replace('T', ' ')
+  try {
+    const commit = execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString()
+      .trim()
+    return `${commit} · ${zeit}`
+  } catch {
+    return zeit
+  }
+}
 
 // In development the app runs on 5173 and talks to the backend on 8000, which
 // app/core/config.py allows via CORS. A production build is served by the
@@ -73,5 +100,8 @@ export default defineConfig({
       },
     }),
   ],
+  // Ersetzt zur Bauzeit, nicht zur Laufzeit gelesen: ein Build soll seine
+  // eigene Kennung tragen, auch offline.
+  define: { __BUILD_ID__: JSON.stringify(buildId()) },
   server: { port: 5173 },
 })

@@ -107,7 +107,7 @@ def test_plan_detail_enthaelt_trainingstage_mit_vorgaben(client: TestClient) -> 
         plan_id,
         1,
         "Push",
-        [{"exercise_id": exercise_id, "target_sets": 3, "target_reps_min": 8, "target_reps_max": 10}],
+        [{"exercise_id": exercise_id, "target_sets": 3}],
     )
 
     plan = client.get(f"/api/v1/workout-plans/{plan_id}").json()
@@ -117,7 +117,8 @@ def test_plan_detail_enthaelt_trainingstage_mit_vorgaben(client: TestClient) -> 
     vorgabe = tag["exercise_links"][0]
     assert vorgabe["exercise"]["title"] == "Bankdruecken"
     assert vorgabe["target_sets"] == 3
-    assert (vorgabe["target_reps_min"], vorgabe["target_reps_max"]) == (8, 10)
+    # Der Plan gibt nur Saetze vor - Wiederholungen kennt er nicht.
+    assert "target_reps_min" not in vorgabe
 
 
 def test_workout_detail_enthaelt_protokollierte_saetze(client: TestClient) -> None:
@@ -534,19 +535,23 @@ def test_vorgabe_laesst_sich_aendern(client: TestClient) -> None:
 
     platz = client.post(
         f"/api/v1/training-days/{tag}/exercises",
-        json={"exercise_id": bank, "target_sets": 3, "target_reps_min": 8, "target_reps_max": 10},
+        json={"exercise_id": bank, "target_sets": 3},
     ).json()["id"]
     geaendert = client.patch(
         f"/api/v1/training-days/{tag}/exercises/{platz}",
-        json={"target_sets": 4, "target_reps_min": 6, "target_reps_max": 8},
+        json={"target_sets": 4},
     )
     assert geaendert.status_code == 200
     assert geaendert.json()["target_sets"] == 4
+    # Und die Aenderung steht auch beim erneuten Lesen im Plan - der
+    # Save-Knopf im Editor haette sonst nichts, worauf er sich verlassen kann.
+    tag_gelesen = client.get(f"/api/v1/training-days/{tag}").json()
+    assert tag_gelesen["exercise_links"][0]["target_sets"] == 4
 
-    # verdrehte Spanne wird abgelehnt
+    # 0 Saetze ist keine Vorgabe, sondern ein Tippfehler.
     kaputt = client.patch(
         f"/api/v1/training-days/{tag}/exercises/{platz}",
-        json={"target_reps_min": 12, "target_reps_max": 5},
+        json={"target_sets": 0},
     )
     assert kaputt.status_code == 422
 
@@ -560,11 +565,11 @@ def test_uebung_darf_pro_tag_mehrfach_stehen(client: TestClient) -> None:
 
     schwer = client.post(
         f"/api/v1/training-days/{tag}/exercises",
-        json={"exercise_id": bank, "position": 1, "target_sets": 5, "target_reps_min": 5},
+        json={"exercise_id": bank, "position": 1, "target_sets": 5},
     )
     leicht = client.post(
         f"/api/v1/training-days/{tag}/exercises",
-        json={"exercise_id": bank, "position": 2, "target_sets": 3, "target_reps_min": 12},
+        json={"exercise_id": bank, "position": 2, "target_sets": 3},
     )
     assert schwer.status_code == 201
     assert leicht.status_code == 201
@@ -711,3 +716,42 @@ def test_katalog_filterbar_nach_user_und_plan(client: TestClient) -> None:
     # Der Plan kennt nur die Uebung, die auch auf einem seiner Tage steht.
     im_plan = client.get(f"/api/v1/exercises?workout_plan_id={plan_id}").json()
     assert [u["title"] for u in im_plan] == ["Bankdruecken"]
+
+
+def test_einheit_loeschen_raeumt_das_log_auf(client: TestClient) -> None:
+    """Der Knopf "Session loeschen" in der Detailansicht.
+
+    Geprueft wird nicht nur der Statuscode, sondern dass die Einheit danach
+    auch aus dem Log verschwunden ist - ein Eintrag, der nur nicht mehr
+    abrufbar ist, aber weiter in der Liste steht, waere der schlimmere Fehler.
+    """
+    user_id = _create_user(client)
+    plan_id = _create_plan(client, user_id)
+    bank = _create_exercise(client, user_id, "Bankdruecken")
+    tag = _create_training_day(client, plan_id, 1, "Push")
+    einheit = client.post(
+        "/api/v1/workouts",
+        json={
+            "date": "2026-09-01T10:00:00Z",
+            "workout_plan_id": plan_id,
+            "training_day_id": tag,
+        },
+    ).json()["id"]
+    client.post(
+        "/api/v1/sets",
+        json={
+            "exercise_id": bank,
+            "workout_id": einheit,
+            "repetitions": 8,
+            "weight": 82.5,
+        },
+    )
+    assert len(client.get(f"/api/v1/users/{user_id}/log/workouts").json()) == 1
+
+    assert client.delete(f"/api/v1/workouts/{einheit}").status_code == 204
+
+    assert client.get(f"/api/v1/workouts/{einheit}").status_code == 404
+    assert client.get(f"/api/v1/users/{user_id}/log/workouts").json() == []
+    # Die Saetze gehen mit (ondelete=CASCADE), der Katalogeintrag bleibt.
+    assert client.get("/api/v1/sets", params={"workout_id": einheit}).json() == []
+    assert client.get(f"/api/v1/exercises/{bank}").status_code == 200

@@ -1,6 +1,6 @@
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, ForeignKey, Integer
+from sqlalchemy import ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.entities.base import Base
@@ -14,11 +14,11 @@ if TYPE_CHECKING:
 class TrainingDayExercise(Base):
     """Verbindet einen Trainingstag mit einer Uebung aus dem Katalog.
 
-    Kein reines Zuordnungspaar, sondern ein Assoziationsobjekt: Hier stehen
-    zusaetzlich die Vorgaben ("Bankdruecken 3x8-10"). Die Vorgabe gehoert
+    Kein reines Zuordnungspaar, sondern ein Assoziationsobjekt: Hier steht
+    zusaetzlich die Vorgabe ("Bankdruecken 3 Saetze"). Die Vorgabe gehoert
     weder zum Tag noch zur Uebung allein, sondern genau zu dieser Kombination -
-    dieselbe Uebung kann an einem schweren Tag 5x5 und an einem leichten
-    3x12-15 vorgeben.
+    dieselbe Uebung kann an einem schweren Tag 5 Saetze und an einem leichten
+    3 vorgeben.
 
     Eine Uebung darf an einem Tag MEHRFACH stehen - z.B. Bankdruecken schwer
     am Anfang und leicht am Ende. Deshalb ist der Primaerschluessel eine
@@ -27,13 +27,6 @@ class TrainingDayExercise(Base):
     """
 
     __tablename__ = "training_day_exercise"
-    __table_args__ = (
-        CheckConstraint(
-            "target_reps_max IS NULL OR target_reps_min IS NULL "
-            "OR target_reps_max >= target_reps_min",
-            name="rep_range_richtig_herum",
-        ),
-    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
@@ -45,11 +38,10 @@ class TrainingDayExercise(Base):
     )
 
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # Die einzige Vorgabe des Plans: wie viele Saetze. Wiederholungen gibt
+    # der Plan bewusst NICHT vor - wie viele es an dem Tag werden, entscheidet
+    # sich im Training und steht danach im Log.
     target_sets: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
-    # Eine Spanne statt einer festen Zahl: "8-10" ist die uebliche Vorgabe.
-    # Beide nullable, damit ein Plan auch ohne Wiederholungsvorgabe auskommt.
-    target_reps_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    target_reps_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     training_day: Mapped["TrainingDay"] = relationship(back_populates="exercise_links")
     exercise: Mapped["Exercise"] = relationship(back_populates="training_day_links")

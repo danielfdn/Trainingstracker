@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 
-import { useUpdateWorkoutComment } from '../api/mutations'
+import { useDeleteWorkout, useUpdateWorkoutComment } from '../api/mutations'
 import { exercisesQuery, workoutLogQuery, workoutQuery } from '../api/queries'
 import { ExerciseCard, SetRow } from '../components/SetList'
 import {
@@ -119,7 +119,60 @@ export function SessionDetail() {
           })}
         </div>
       )}
+
+      <DeleteSession userId={userId} workoutId={workoutId} date={date} />
     </>
+  )
+}
+
+/**
+ * Deletes the session for good.
+ *
+ * Sits at the very bottom, behind a confirmation, and only here — not on the
+ * log list. A row in that list is one tap away from a scrolling thumb, and
+ * this is the one action in the app that destroys training history. Getting
+ * to it means having opened the session and seen what is in it.
+ */
+function DeleteSession({
+  userId,
+  workoutId,
+  date,
+}: {
+  userId: number
+  workoutId: number
+  date: string
+}) {
+  const navigate = useNavigate()
+  const remove = useDeleteWorkout(userId)
+
+  return (
+    <div className="mt-10 border-t border-border pt-6">
+      {remove.error && (
+        <p className="mb-3 text-sm text-negative">{(remove.error as Error).message}</p>
+      )}
+      <Button
+        variant="danger"
+        disabled={remove.isPending}
+        onClick={() => {
+          if (
+            !window.confirm(
+              `Delete the session of ${date}? Its sets go with it, and this cannot be undone.`,
+            )
+          )
+            return
+          // Back to the log, not back in history: the detail view of a
+          // deleted session would 404 on the next back tap.
+          remove.mutate(workoutId, {
+            onSuccess: () => navigate(`/u/${userId}/log`, { replace: true }),
+          })
+        }}
+      >
+        {remove.isPending ? 'Deleting…' : 'Delete session'}
+      </Button>
+      <p className="mt-2 text-sm text-content-faint">
+        Removes the session from the log and from the month comparison.
+      </p>
+    </div>
   )
 }
 

@@ -44,13 +44,36 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-def _ist_api(path: str) -> bool:
-    """Unbekannte API-Pfade duerfen NICHT auf die index.html zurueckfallen.
+# Dateiendungen, hinter denen niemals eine Route des React-Routers steckt.
+# .js und .css stehen hier wegen der PWA: fehlt eine Datei, MUSS das eine 404
+# sein. Kaeme statt "sw.js" die index.html mit Status 200 zurueck, wuerde der
+# Browser den alten Service Worker behalten - und die installierte App liefe
+# fuer immer auf einem alten Bundle weiter, ohne jede Fehlermeldung.
+_DATEI_ENDUNGEN = (
+    ".js",
+    ".css",
+    ".map",
+    ".json",
+    ".webmanifest",
+    ".png",
+    ".svg",
+    ".ico",
+    ".woff",
+    ".woff2",
+)
 
-    Sonst antwortet ein Tippfehler in der URL mit HTML und dem Status 200 -
-    der Client bekaeme also "Erfolg" und eine Seite, wo er JSON erwartet.
+
+def _kein_rueckfall(path: str) -> bool:
+    """Pfade, die NICHT auf die index.html zurueckfallen duerfen.
+
+    Zwei Faelle: unbekannte API-Pfade, weil ein Tippfehler in der URL sonst
+    mit HTML und Status 200 antwortet - der Client bekaeme also "Erfolg" und
+    eine Seite, wo er JSON erwartet. Und alles, was nach einer Datei aussieht,
+    aus dem Grund im Kommentar oben.
     """
-    return path.startswith("api/") or path == "api"
+    if path.startswith("api/") or path == "api":
+        return True
+    return path.rsplit("/", 1)[-1].endswith(_DATEI_ENDUNGEN)
 
 
 class SpaStaticFiles(StaticFiles):
@@ -70,10 +93,10 @@ class SpaStaticFiles(StaticFiles):
             # StaticFiles WIRFT die 404, es gibt sie nicht als Antwort
             # zurueck - ein Blick auf response.status_code allein wuerde
             # hier also nie greifen.
-            if fehler.status_code != 404 or _ist_api(path):
+            if fehler.status_code != 404 or _kein_rueckfall(path):
                 raise
             return await super().get_response("index.html", scope)
-        if response.status_code == 404 and not _ist_api(path):
+        if response.status_code == 404 and not _kein_rueckfall(path):
             return await super().get_response("index.html", scope)
         return response
 

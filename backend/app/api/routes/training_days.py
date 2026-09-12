@@ -146,7 +146,7 @@ def add_exercise_to_day(
     exercise_repo: ExerciseRepoDep,
     plan_repo: WorkoutPlanRepoDep,
 ) -> TrainingDayExercise:
-    """Setzt eine Katalog-Uebung mit Vorgabe ("3x8-10") auf den Trainingstag."""
+    """Setzt eine Katalog-Uebung mit Vorgabe ("3 Saetze") auf den Trainingstag."""
     tag = _hole_tag(training_day_id, repo)
     uebung = exercise_repo.get(link_in.exercise_id)
     if uebung is None:
@@ -177,21 +177,13 @@ def update_day_exercise(
     link_in: TrainingDayExerciseUpdate,
     repo: TrainingDayRepoDep,
 ) -> TrainingDayExercise:
-    """Aendert die Vorgabe, z.B. von 3x8-10 auf 4x6-8.
+    """Aendert die Vorgabe, z.B. von 3 auf 4 Saetze.
 
     Adressiert wird der Platz ueber seine id, nicht ueber die Uebung: an
     einem Tag koennen mehrere Plaetze dieselbe Uebung tragen.
     """
     link = _hole_platz(training_day_id, link_id, repo)
-    daten = link_in.model_dump(exclude_unset=True)
-    minimum = daten.get("target_reps_min", link.target_reps_min)
-    maximum = daten.get("target_reps_max", link.target_reps_max)
-    if minimum is not None and maximum is not None and maximum < minimum:
-        raise HTTPException(
-            status_code=422,
-            detail="target_reps_max darf nicht kleiner als target_reps_min sein",
-        )
-    return repo.update_exercise_link(link, daten)
+    return repo.update_exercise_link(link, link_in.model_dump(exclude_unset=True))
 
 
 @router.delete(

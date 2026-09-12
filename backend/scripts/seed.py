@@ -132,22 +132,22 @@ def seed(session) -> None:
     push = TrainingDay(position=1, workout_type="Push")
     push.exercise_links = [
         TrainingDayExercise(
-            exercise=bank, position=1, target_sets=3, target_reps_min=8, target_reps_max=10
+            exercise=bank, position=1, target_sets=3
         ),
     ]
     pull = TrainingDay(position=2, workout_type="Pull")
     pull.exercise_links = [
         TrainingDayExercise(
-            exercise=klimmzug, position=1, target_sets=3, target_reps_min=5, target_reps_max=8
+            exercise=klimmzug, position=1, target_sets=3
         ),
         TrainingDayExercise(
-            exercise=rudern, position=2, target_sets=3, target_reps_min=10, target_reps_max=12
+            exercise=rudern, position=2, target_sets=3
         ),
     ]
     legs = TrainingDay(position=3, workout_type="Legs")
     legs.exercise_links = [
         TrainingDayExercise(
-            exercise=kniebeuge, position=1, target_sets=4, target_reps_min=5, target_reps_max=8
+            exercise=kniebeuge, position=1, target_sets=4
         ),
     ]
     anna_plan.training_days = [push, pull, legs]
@@ -234,8 +234,8 @@ def seed(session) -> None:
     )
     alt_tag = TrainingDay(position=1, workout_type="Ganzkoerper")
     alt_tag.exercise_links = [
-        TrainingDayExercise(exercise=ben_bank, position=1, target_sets=3, target_reps_min=10, target_reps_max=12),
-        TrainingDayExercise(exercise=ben_kreuzheben, position=2, target_sets=3, target_reps_min=5, target_reps_max=5),
+        TrainingDayExercise(exercise=ben_bank, position=1, target_sets=3),
+        TrainingDayExercise(exercise=ben_kreuzheben, position=2, target_sets=3),
     ]
     ben_alt.training_days = [alt_tag]
     for vor_monaten in (10, 9, 8):
@@ -255,13 +255,13 @@ def seed(session) -> None:
     )
     ober = TrainingDay(position=1, workout_type="Oberkoerper")
     ober.exercise_links = [
-        TrainingDayExercise(exercise=ben_bank, position=1, target_sets=4, target_reps_min=6, target_reps_max=8),
-        TrainingDayExercise(exercise=ben_schulter, position=2, target_sets=3, target_reps_min=8, target_reps_max=10),
-        TrainingDayExercise(exercise=ben_liegestuetz, position=3, target_sets=3, target_reps_min=15, target_reps_max=20),
+        TrainingDayExercise(exercise=ben_bank, position=1, target_sets=4),
+        TrainingDayExercise(exercise=ben_schulter, position=2, target_sets=3),
+        TrainingDayExercise(exercise=ben_liegestuetz, position=3, target_sets=3),
     ]
     unter = TrainingDay(position=2, workout_type="Unterkoerper")
     unter.exercise_links = [
-        TrainingDayExercise(exercise=ben_kreuzheben, position=1, target_sets=4, target_reps_min=3, target_reps_max=5),
+        TrainingDayExercise(exercise=ben_kreuzheben, position=1, target_sets=4),
     ]
     ben_neu.training_days = [ober, unter]
     for vor_monaten in (2, 1):
@@ -307,8 +307,8 @@ def seed(session) -> None:
     )
     clara_tag = TrainingDay(position=1, workout_type="Ganzkoerper")
     clara_tag.exercise_links = [
-        TrainingDayExercise(exercise=clara_kniebeuge, position=1, target_sets=3, target_reps_min=15, target_reps_max=20),
-        TrainingDayExercise(exercise=clara_plank, position=2, target_sets=3, target_reps_min=30, target_reps_max=45),
+        TrainingDayExercise(exercise=clara_kniebeuge, position=1, target_sets=3),
+        TrainingDayExercise(exercise=clara_plank, position=2, target_sets=3),
     ]
     clara_plan.training_days = [clara_tag]
     clara.workout_plans = [clara_plan]

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.exercise import ExercisePublic
 
@@ -6,18 +6,6 @@ from app.schemas.exercise import ExercisePublic
 class TrainingDayExerciseBase(BaseModel):
     position: int = Field(default=1, ge=1)
     target_sets: int = Field(default=3, ge=1, le=20)
-    target_reps_min: int | None = Field(default=None, ge=1, le=1000)
-    target_reps_max: int | None = Field(default=None, ge=1, le=1000)
-
-    @model_validator(mode="after")
-    def check_rep_range(self):
-        if (
-            self.target_reps_min is not None
-            and self.target_reps_max is not None
-            and self.target_reps_max < self.target_reps_min
-        ):
-            raise ValueError("target_reps_max darf nicht kleiner als target_reps_min sein")
-        return self
 
 
 class TrainingDayExerciseCreate(TrainingDayExerciseBase):
@@ -29,8 +17,6 @@ class TrainingDayExerciseCreate(TrainingDayExerciseBase):
 class TrainingDayExerciseUpdate(BaseModel):
     position: int | None = Field(default=None, ge=1)
     target_sets: int | None = Field(default=None, ge=1, le=20)
-    target_reps_min: int | None = Field(default=None, ge=1, le=1000)
-    target_reps_max: int | None = Field(default=None, ge=1, le=1000)
 
 
 class TrainingDayExercisePublic(TrainingDayExerciseBase):
@@ -45,12 +31,8 @@ class TrainingDayExercisePublic(TrainingDayExerciseBase):
 
     @property
     def target_text(self) -> str:
-        """"3x8-10" - fertig zum Anzeigen."""
-        if self.target_reps_min is None:
-            return f"{self.target_sets}x"
-        if self.target_reps_max is None or self.target_reps_max == self.target_reps_min:
-            return f"{self.target_sets}x{self.target_reps_min}"
-        return f"{self.target_sets}x{self.target_reps_min}-{self.target_reps_max}"
+        """"3x" - fertig zum Anzeigen."""
+        return f"{self.target_sets}x"
 
 
 class TrainingDayBase(BaseModel):

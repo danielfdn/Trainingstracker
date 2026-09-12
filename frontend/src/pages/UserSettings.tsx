@@ -103,6 +103,13 @@ export function UserSettings() {
           Delete profile
         </Button>
       </Card>
+
+      {/* Which bundle this device is actually running. An installed PWA can
+          keep serving an old one long after the server has been updated, and
+          without this there is no way to tell that from the outside. */}
+      <p className="mt-6 text-center text-xs text-content-faint tabular">
+        Version {__BUILD_ID__}
+      </p>
     </>
   )
 }
