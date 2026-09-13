@@ -112,6 +112,12 @@ class WorkoutRepo(BaseRepo[Workout]):
         gesetzt, nicht auf "jetzt" - die gemessene Dauer bleibt damit die
         Obergrenze und wird nicht durch die Vergesslichkeit aufgeblasen.
 
+        Eine pausierte Einheit wird genauso geschlossen: wer die Pause nicht
+        beendet, hat die Einheit erst recht vergessen. Die offene Pause wird
+        dabei bis zum Schluss gerechnet, damit sie nicht als Trainingszeit
+        zaehlt - und auf die Spanne begrenzt, damit die Dauer nicht negativ
+        wird.
+
         Bewusst in Python statt als ein grosses UPDATE mit Datums-Arithmetik:
         so verhaelt es sich auf PostgreSQL und dem SQLite der Tests gleich.
         Es sind ohnehin nur die wenigen offenen Einheiten betroffen.
@@ -127,9 +133,21 @@ class WorkoutRepo(BaseRepo[Workout]):
         geschlossen = 0
         for workout in offen:
             start = as_utc(workout.started_at)
-            if start is not None and start < grenze:
-                workout.finished_at = start + max_duration
-                geschlossen += 1
+            if start is None or start >= grenze:
+                continue
+            ende = start + max_duration
+            pause_start = as_utc(workout.paused_at)
+            if pause_start is not None:
+                offene_pause = (ende - max(pause_start, start)).total_seconds()
+                workout.paused_seconds = (workout.paused_seconds or 0) + max(
+                    0, int(offene_pause)
+                )
+                workout.paused_at = None
+            workout.paused_seconds = min(
+                workout.paused_seconds or 0, int(max_duration.total_seconds())
+            )
+            workout.finished_at = ende
+            geschlossen += 1
         if geschlossen:
             self.session.commit()
         return geschlossen

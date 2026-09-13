@@ -111,6 +111,38 @@ def test_sync_legt_einheit_mit_saetzen_in_einem_aufruf_an(client: TestClient) ->
     assert daten["body_weight"] == 80.5
 
 
+def test_sync_uebernimmt_die_pausen_des_geraets(client: TestClient) -> None:
+    """Pausiert wird waehrend des Trainings, uebertragen wird erst danach.
+
+    Das Handy zaehlt die Pausen selbst mit - im Keller ohne Empfang erfaehrt
+    der Server ohnehin nichts davon, bis die Einheit komplett ankommt.
+    """
+    user_id = _create_user(client)
+    plan_id = _create_plan(client, user_id)
+    exercise_id = _create_exercise(client, user_id, "Bankdruecken")
+    day_id = _create_training_day(client, plan_id, 1, "Push")
+
+    payload = _sync_payload(plan_id, day_id, exercise_id, "pause-1111-2222")
+    payload["paused_seconds"] = 720
+
+    daten = client.post("/api/v1/workouts/sync", json=payload)
+    assert daten.status_code == 201, daten.text
+    # 72 Minuten offen, 12 davon pausiert.
+    assert daten.json()["duration"] == "01:00:00"
+
+
+def test_sync_lehnt_zu_lange_pause_ab(client: TestClient) -> None:
+    user_id = _create_user(client)
+    plan_id = _create_plan(client, user_id)
+    exercise_id = _create_exercise(client, user_id, "Bankdruecken")
+    day_id = _create_training_day(client, plan_id, 1, "Push")
+
+    payload = _sync_payload(plan_id, day_id, exercise_id, "pause-zu-lang-1")
+    payload["paused_seconds"] = 99999
+
+    assert client.post("/api/v1/workouts/sync", json=payload).status_code == 422
+
+
 def test_sync_haelt_die_plaetze_auseinander(client: TestClient) -> None:
     """Dieselbe Uebung zweimal am Tag: jeder Satz behaelt seinen Platz.
 

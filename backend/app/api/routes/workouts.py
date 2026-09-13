@@ -158,6 +158,7 @@ def sync_workout(
         comment=einheit.comment,
         started_at=einheit.started_at,
         finished_at=einheit.finished_at,
+        paused_seconds=einheit.paused_seconds,
         workout_plan_id=einheit.workout_plan_id,
         training_day_id=einheit.training_day_id,
         client_uuid=einheit.client_uuid,
@@ -267,6 +268,8 @@ def update_workout(
     # frisch geschickte aber immer eine Zeitzone traegt.
     start = as_utc(daten.get("started_at", workout.started_at))
     ende = as_utc(daten.get("finished_at", workout.finished_at))
+    pause_start = as_utc(daten.get("paused_at", workout.paused_at))
+    pause = daten.get("paused_seconds", workout.paused_seconds) or 0
     if ende is not None:
         if start is None:
             raise HTTPException(
@@ -276,6 +279,22 @@ def update_workout(
         if ende < start:
             raise HTTPException(
                 status_code=422, detail="finished_at darf nicht vor started_at liegen"
+            )
+        if pause > (ende - start).total_seconds():
+            raise HTTPException(
+                status_code=422,
+                detail="paused_seconds ist laenger als die Einheit selbst",
+            )
+    if pause_start is not None:
+        if start is None:
+            raise HTTPException(
+                status_code=422,
+                detail="paused_at ohne started_at - eine Einheit kann nicht pausieren, ohne begonnen zu haben",
+            )
+        if ende is not None:
+            raise HTTPException(
+                status_code=422,
+                detail="paused_at und finished_at zugleich - eine beendete Einheit pausiert nicht mehr",
             )
 
     return repo.update(workout, daten)
@@ -334,4 +353,69 @@ def finish_workout(workout_id: int, repo: WorkoutRepoDep) -> Workout:
             status_code=409,
             detail=f"Workout {workout_id} ist bereits seit {workout.finished_at.isoformat()} beendet",
         )
-    return repo.update(workout, {"finished_at": datetime.now(timezone.utc)})
+    jetzt = datetime.now(timezone.utc)
+    # Beenden waehrend einer Pause ist erlaubt - man merkt ja oft erst in der
+    # Pause, dass man fertig ist. Die offene Pause wird dabei geschlossen,
+    # sonst zaehlte sie als Trainingszeit.
+    daten: dict = {"finished_at": jetzt}
+    if workout.paused_at is not None:
+        daten |= _pause_beenden(workout, jetzt)
+    return repo.update(workout, daten)
+
+
+def _pause_beenden(workout: Workout, jetzt: datetime) -> dict:
+    """Schreibt die laufende Pause in die Summe und schliesst sie."""
+    dauer = (jetzt - as_utc(workout.paused_at)).total_seconds()
+    return {
+        "paused_seconds": (workout.paused_seconds or 0) + max(0, int(dauer)),
+        "paused_at": None,
+    }
+
+
+@router.post("/{workout_id}/pause", response_model=WorkoutPublic)
+def pause_workout(workout_id: int, repo: WorkoutRepoDep) -> Workout:
+    """Haelt die Uhr an, ohne die Einheit zu beenden.
+
+    Gedacht fuer alles, was zwischen den Saetzen dazwischenkommt und keine
+    Trainingszeit ist: ein Anruf, ein belegtes Geraet, oder ein Fehler beim
+    Speichern, der das Beenden verzoegert. Die Einheit bleibt offen, nur die
+    gemessene Dauer waechst nicht weiter.
+    """
+    workout = repo.get(workout_id)
+    if workout is None:
+        raise HTTPException(
+            status_code=404, detail=f"Workout {workout_id} nicht gefunden"
+        )
+    if workout.started_at is None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Workout {workout_id} wurde nie gestartet - erst /start aufrufen",
+        )
+    if workout.finished_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Workout {workout_id} ist bereits beendet und kann nicht pausieren",
+        )
+    if workout.paused_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Workout {workout_id} pausiert bereits seit {workout.paused_at.isoformat()}",
+        )
+    # Kein _vergessene_schliessen hier: wer pausiert, ist offensichtlich da.
+    return repo.update(workout, {"paused_at": datetime.now(timezone.utc)})
+
+
+@router.post("/{workout_id}/resume", response_model=WorkoutPublic)
+def resume_workout(workout_id: int, repo: WorkoutRepoDep) -> Workout:
+    """Setzt die pausierte Einheit fort und laesst die Uhr weiterlaufen."""
+    workout = repo.get(workout_id)
+    if workout is None:
+        raise HTTPException(
+            status_code=404, detail=f"Workout {workout_id} nicht gefunden"
+        )
+    if workout.paused_at is None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Workout {workout_id} pausiert nicht - es gibt nichts fortzusetzen",
+        )
+    return repo.update(workout, _pause_beenden(workout, datetime.now(timezone.utc)))

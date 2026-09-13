@@ -15,6 +15,10 @@ class WorkoutBase(BaseModel):
     # samt Zeiten nachtragen kann.
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    # Summe der beendeten Pausen. Beim Nachtragen einer vergangenen Einheit
+    # darf sie mitgegeben werden, sonst setzen /pause und /resume sie.
+    paused_seconds: int = Field(default=0, ge=0)
+    paused_at: datetime | None = None
 
     @model_validator(mode="after")
     def check_zeitraum(self):
@@ -26,6 +30,25 @@ class WorkoutBase(BaseModel):
                 )
             if as_utc(self.finished_at) < as_utc(self.started_at):
                 raise ValueError("finished_at darf nicht vor started_at liegen")
+        if self.paused_at is not None:
+            if self.started_at is None:
+                raise ValueError(
+                    "paused_at ohne started_at - eine Einheit kann nicht pausieren, "
+                    "ohne begonnen zu haben"
+                )
+            if self.finished_at is not None:
+                raise ValueError(
+                    "paused_at und finished_at zugleich - eine beendete Einheit "
+                    "pausiert nicht mehr"
+                )
+        # Sonst waere die Trainingszeit negativ und wuerde auf 0 gekappt -
+        # besser, der Wert kommt gar nicht erst herein.
+        if self.started_at is not None and self.finished_at is not None:
+            spanne = (as_utc(self.finished_at) - as_utc(self.started_at)).total_seconds()
+            if self.paused_seconds > spanne:
+                raise ValueError(
+                    "paused_seconds ist laenger als die Einheit selbst"
+                )
         return self
 
 
@@ -45,6 +68,8 @@ class WorkoutUpdate(BaseModel):
     comment: str | None = Field(default=None, max_length=2000)
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    paused_seconds: int | None = Field(default=None, ge=0)
+    paused_at: datetime | None = None
     training_day_id: int | None = None
 
 
@@ -69,10 +94,14 @@ class WorkoutPublic(WorkoutBase):
     @computed_field
     @property
     def duration_seconds(self) -> int | None:
-        """Abgeleitet, nicht gespeichert - None solange die Einheit laeuft."""
+        """Abgeleitet, nicht gespeichert - None solange die Einheit laeuft.
+
+        Ohne Pausen: was zaehlt, ist die trainierte Zeit.
+        """
         if self.started_at is None or self.finished_at is None:
             return None
-        return int((as_utc(self.finished_at) - as_utc(self.started_at)).total_seconds())
+        brutto = (as_utc(self.finished_at) - as_utc(self.started_at)).total_seconds()
+        return max(0, int(brutto) - self.paused_seconds)
 
     @computed_field
     @property
@@ -89,8 +118,15 @@ class WorkoutPublic(WorkoutBase):
     @property
     def is_running(self) -> bool:
         """True zwischen /start und /finish - das Frontend zeigt dann die
-        laufende Uhr statt der Enddauer."""
+        laufende Uhr statt der Enddauer. Auch waehrend einer Pause: die
+        Einheit ist offen, nur die Uhr steht."""
         return self.started_at is not None and self.finished_at is None
+
+    @computed_field
+    @property
+    def is_paused(self) -> bool:
+        """True zwischen /pause und /resume - das Frontend haelt die Uhr an."""
+        return self.paused_at is not None
 
 
 class WorkoutWithSets(WorkoutPublic):
@@ -137,10 +173,18 @@ class WorkoutSync(BaseModel):
     # naechsten Morgen uebertragene Einheit zwoelf Stunden lang.
     started_at: datetime
     finished_at: datetime
+    # Pausen aus dem Trainingsbildschirm. Der Client zaehlt sie mit, weil er
+    # waehrenddessen ohnehin offline sein kann - der Server erfaehrt erst beim
+    # Uebertragen davon. Kein paused_at: uebertragen wird nur, was fertig ist,
+    # und eine fertige Einheit pausiert nicht mehr.
+    paused_seconds: int = Field(default=0, ge=0)
     sets: list[WorkoutSyncSet] = []
 
     @model_validator(mode="after")
     def check_zeitraum(self):
         if as_utc(self.finished_at) < as_utc(self.started_at):
             raise ValueError("finished_at darf nicht vor started_at liegen")
+        spanne = (as_utc(self.finished_at) - as_utc(self.started_at)).total_seconds()
+        if self.paused_seconds > spanne:
+            raise ValueError("paused_seconds ist laenger als die Einheit selbst")
         return self

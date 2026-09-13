@@ -253,6 +253,8 @@ export function useSyncWorkout(userId: number) {
       date: string
       started_at: string
       finished_at: string
+      /** Total paused time, subtracted from the duration server-side. */
+      paused_seconds: number
       comment: string
       sets: {
         exercise_id: number
@@ -315,8 +317,9 @@ export function useMarkMissed(userId: number) {
             ...body,
             comment: body.comment ?? '',
             // No start and no finish: a session that did not happen has no
-            // times, and therefore no duration in the log.
+            // times, and therefore no duration and nothing to pause.
             attended: false,
+            paused_seconds: 0,
           },
         }),
       ),

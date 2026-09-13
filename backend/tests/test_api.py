@@ -420,6 +420,109 @@ def test_vergessene_einheit_wird_nach_sechs_stunden_geschlossen(
     assert client.post(f"/api/v1/workouts/{vergessen}/finish").status_code == 409
 
 
+def test_einheit_pausieren_und_fortsetzen(client: TestClient) -> None:
+    """Die Uhr steht waehrend der Pause und laeuft danach weiter."""
+    user_id = _create_user(client)
+    plan_id = _create_plan(client, user_id)
+    workout_id = _create_workout(client, plan_id)
+    client.post(f"/api/v1/workouts/{workout_id}/start")
+
+    pausiert = client.post(f"/api/v1/workouts/{workout_id}/pause").json()
+    assert pausiert["is_paused"] is True
+    # Pausiert heisst offen, nicht beendet - die Einheit laeuft weiter.
+    assert pausiert["is_running"] is True
+    assert pausiert["paused_at"] is not None
+
+    fortgesetzt = client.post(f"/api/v1/workouts/{workout_id}/resume").json()
+    assert fortgesetzt["is_paused"] is False
+    assert fortgesetzt["paused_at"] is None
+    assert fortgesetzt["paused_seconds"] >= 0
+
+
+def test_pause_zaehlt_nicht_als_trainingszeit(client: TestClient) -> None:
+    """Der eigentliche Zweck: eine Stunde Pause verkuerzt die Dauer."""
+    user_id = _create_user(client)
+    plan_id = _create_plan(client, user_id)
+
+    workout = client.post(
+        "/api/v1/workouts",
+        json={
+            "date": "2026-08-31T10:00:00Z",
+            "workout_plan_id": plan_id,
+            "started_at": "2026-08-31T10:00:00Z",
+            "finished_at": "2026-08-31T12:00:00Z",
+            "paused_seconds": 3600,
+        },
+    ).json()
+    assert workout["duration"] == "01:00:00"
+    assert workout["duration_seconds"] == 3600
+
+
+def test_pause_darf_nicht_laenger_sein_als_die_einheit(client: TestClient) -> None:
+    """Sonst waere die Trainingszeit negativ."""
+    user_id = _create_user(client)
+    plan_id = _create_plan(client, user_id)
+
+    abgelehnt = client.post(
+        "/api/v1/workouts",
+        json={
+            "date": "2026-08-31T10:00:00Z",
+            "workout_plan_id": plan_id,
+            "started_at": "2026-08-31T10:00:00Z",
+            "finished_at": "2026-08-31T11:00:00Z",
+            "paused_seconds": 7200,
+        },
+    )
+    assert abgelehnt.status_code == 422
+
+
+def test_pause_nur_fuer_laufende_einheiten(client: TestClient) -> None:
+    user_id = _create_user(client)
+    plan_id = _create_plan(client, user_id)
+    workout_id = _create_workout(client, plan_id)
+
+    # Nie gestartet
+    assert client.post(f"/api/v1/workouts/{workout_id}/pause").status_code == 409
+    # Nicht pausiert - es gibt nichts fortzusetzen
+    assert client.post(f"/api/v1/workouts/{workout_id}/resume").status_code == 409
+
+    client.post(f"/api/v1/workouts/{workout_id}/start")
+    assert client.post(f"/api/v1/workouts/{workout_id}/pause").status_code == 200
+    # Zweimal pausieren wuerde den Beginn der ersten Pause verlieren
+    assert client.post(f"/api/v1/workouts/{workout_id}/pause").status_code == 409
+
+    # Beenden geht aus der Pause heraus - man merkt oft erst dort, dass man
+    # fertig ist. Die offene Pause wird dabei geschlossen.
+    beendet = client.post(f"/api/v1/workouts/{workout_id}/finish").json()
+    assert beendet["is_paused"] is False
+    assert beendet["paused_at"] is None
+    assert beendet["duration_seconds"] >= 0
+    # Und eine beendete Einheit pausiert nicht mehr
+    assert client.post(f"/api/v1/workouts/{workout_id}/pause").status_code == 409
+
+
+def test_vergessene_pause_wird_mitgeschlossen(client: TestClient) -> None:
+    """Wer in der Pause aufhoert, hinterlaesst keine ewig laufende Einheit."""
+    user_id = _create_user(client)
+    plan_id = _create_plan(client, user_id)
+
+    workout_id = _create_workout(client, plan_id)
+    lange_her = datetime.now(timezone.utc) - timedelta(hours=9)
+    client.patch(
+        f"/api/v1/workouts/{workout_id}",
+        json={
+            "started_at": lange_her.isoformat(),
+            "paused_at": (lange_her + timedelta(hours=1)).isoformat(),
+        },
+    )
+
+    geschlossen = client.get(f"/api/v1/workouts/{workout_id}").json()
+    assert geschlossen["is_running"] is False
+    assert geschlossen["is_paused"] is False
+    # Eine Stunde trainiert, die restlichen fuenf der Obergrenze pausiert.
+    assert geschlossen["duration"] == "01:00:00"
+
+
 def test_frische_einheit_wird_nicht_geschlossen(client: TestClient) -> None:
     """Die Aufraeumaktion darf laufende Einheiten nicht abwuergen."""
     user_id = _create_user(client)

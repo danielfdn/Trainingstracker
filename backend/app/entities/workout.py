@@ -39,6 +39,19 @@ class Workout(Base):
             "finished_at IS NULL OR finished_at >= started_at",
             name="workout_ende_nach_start",
         ),
+        # Eine Pause kann nur laufen, was begonnen und noch nicht geendet hat.
+        CheckConstraint(
+            "paused_at IS NULL OR started_at IS NOT NULL",
+            name="workout_pause_braucht_start",
+        ),
+        CheckConstraint(
+            "paused_at IS NULL OR finished_at IS NULL",
+            name="workout_pause_nicht_nach_ende",
+        ),
+        CheckConstraint(
+            "paused_seconds >= 0",
+            name="workout_pause_nicht_negativ",
+        ),
         # Benannt, nicht unique=True an der Spalte: ein unbenannter Constraint
         # laesst sich in downgrade() nicht wieder loeschen.
         UniqueConstraint("client_uuid", name="workout_client_uuid_einmalig"),
@@ -62,6 +75,26 @@ class Workout(Base):
     )
     finished_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+    # Pausen. Die Uhr laeuft nicht immer durch: ein Anruf, ein belegtes Geraet,
+    # oder - der Anlass fuer diese Spalten - ein Verbindungsfehler, der das
+    # Beenden verhindert. Ohne Pause stuenden solche Wartezeiten als Trainings-
+    # zeit im Log.
+    #
+    # Zwei Spalten, weil eine offene und eine abgeschlossene Pause
+    # verschiedene Dinge sind:
+    #   paused_at gesetzt  -> die Einheit pausiert gerade, seit diesem Moment
+    #   paused_seconds     -> Summe aller bereits beendeten Pausen
+    # Beim Fortsetzen wandert die offene Pause in die Summe. Gespeichert wird
+    # die Summe und nicht jede einzelne Pause: fuer die Dauer zaehlt nur, wie
+    # lange insgesamt nicht trainiert wurde, und eine Pausenhistorie wuerde
+    # nirgends angezeigt.
+    paused_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    paused_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
     )
     comment: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
@@ -106,11 +139,22 @@ class Workout(Base):
         return self.training_day_id is None
 
     @property
+    def is_paused(self) -> bool:
+        """True, solange eine Pause laeuft."""
+        return self.paused_at is not None
+
+    @property
     def duration_seconds(self) -> int | None:
-        """Dauer der Einheit, oder None solange sie nicht abgeschlossen ist."""
+        """Trainingszeit, oder None solange die Einheit nicht abgeschlossen ist.
+
+        Pausen zaehlen nicht mit: gemessen wird, wie lange trainiert wurde,
+        nicht wie lange der Bildschirm offen war. max(0, ...), damit ein
+        nachtraeglich verschobenes finished_at keine negative Dauer ergibt.
+        """
         if self.started_at is None or self.finished_at is None:
             return None
-        return int((as_utc(self.finished_at) - as_utc(self.started_at)).total_seconds())
+        brutto = (as_utc(self.finished_at) - as_utc(self.started_at)).total_seconds()
+        return max(0, int(brutto) - (self.paused_seconds or 0))
 
     def __repr__(self) -> str:
         return f"Workout(id={self.id!r}, date={self.date!r}, attended={self.attended!r})"

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 
 import { planQuery, userPlansQuery, userQuery, workoutLogQuery } from '../api/queries'
 import { CardLink, Card, ErrorNote, Loading, PageTitle } from '../components/ui'
-import { elapsedSeconds, formatDuration, loadDraft } from '../lib/draft'
+import { activeSeconds, formatDuration, isPaused, loadDraft } from '../lib/draft'
 import { useUserId } from '../lib/useUserId'
 
 /** `/u/:userId` — the option menu from the spec, with two panels above it. */
@@ -45,7 +45,8 @@ export function MainMenu() {
           <span className="min-w-0">
             <span className="block font-medium text-accent">Resume {draft.workout_type}</span>
             <span className="mt-0.5 block text-sm text-content-muted tabular">
-              running {formatDuration(elapsedSeconds(draft.started_at))} · {draft.sets.length} sets
+              {isPaused(draft) ? 'paused at' : 'running'} {formatDuration(activeSeconds(draft))} ·{' '}
+              {draft.sets.length} sets
             </span>
           </span>
           <span aria-hidden className="shrink-0 text-accent">

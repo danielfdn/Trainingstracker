@@ -9,11 +9,15 @@ import type { Exercise } from '../api/types'
 import { ExerciseCard, SetRow } from '../components/SetList'
 import { Button, Card, EmptyState, Modal, Select, TextArea } from '../components/ui'
 import {
+  activeSeconds,
   clearDraft,
-  elapsedSeconds,
   formatDuration,
+  isPaused,
   loadDraft,
+  pauseDraft,
+  resumeDraft,
   saveDraft,
+  totalPausedSeconds,
   type WorkoutDraft,
 } from '../lib/draft'
 import { useUserId } from '../lib/useUserId'
@@ -64,7 +68,15 @@ export function LiveWorkout() {
   const extras = [...new Set(extraIds)]
 
   const finish = () => {
-    const finished_at = new Date().toISOString()
+    // Finishing while paused is allowed — you often only notice you are done
+    // once you have stopped. The open pause counts towards the total but is
+    // deliberately left open in the draft: if this sync fails, the clock must
+    // stay stopped while you wait for a connection, which is exactly the case
+    // pausing exists for.
+    // One timestamp for both, so the paused total can never round to a second
+    // more than the session it sits inside — the server rejects that.
+    const now = Date.now()
+    const finished_at = new Date(now).toISOString()
     sync.mutate(
       {
         client_uuid: draft.client_uuid,
@@ -73,6 +85,7 @@ export function LiveWorkout() {
         date: draft.started_at,
         started_at: draft.started_at,
         finished_at,
+        paused_seconds: totalPausedSeconds(draft, now),
         comment: draft.comment,
         sets: draft.sets.map((set) => ({
           exercise_id: set.exercise_id,
@@ -93,7 +106,7 @@ export function LiveWorkout() {
 
   return (
     <>
-      <Header draft={draft} />
+      <Header draft={draft} onChange={update} />
 
       <SessionNote draft={draft} onChange={update} />
 
@@ -155,7 +168,8 @@ export function LiveWorkout() {
         <Card className="mt-6 border-negative/40">
           <p className="text-sm text-negative">{(sync.error as Error).message}</p>
           <p className="mt-1 text-sm text-content-muted">
-            Your sets are safe on this device. Try again once you have a connection.
+            Your sets are safe on this device. Try again once you have a connection — and hit
+            Pause if the wait drags on, so it is not counted as training time.
           </p>
         </Card>
       )}
@@ -184,19 +198,52 @@ export function LiveWorkout() {
   )
 }
 
-/** Running clock. Derived from the start timestamp, so sleeping is harmless. */
-function Header({ draft }: { draft: WorkoutDraft }) {
-  const [seconds, setSeconds] = useState(() => elapsedSeconds(draft.started_at))
-
+/**
+ * Running clock, with the pause control next to it.
+ *
+ * The time is derived from the timestamps in the draft, so sleeping — or
+ * closing the tab mid-pause — is harmless. The pause itself lives in the
+ * draft too: it survives a reload, which is the whole point when the reason
+ * for pausing was that something stopped working.
+ */
+function Header({
+  draft,
+  onChange,
+}: {
+  draft: WorkoutDraft
+  onChange: (draft: WorkoutDraft) => void
+}) {
+  const paused = isPaused(draft)
+  // The interval only forces a re-render; the number itself is derived below,
+  // so pausing and resuming show the right time immediately without waiting
+  // for the next tick. No ticking while paused — it cannot change until you
+  // resume.
+  const [, tick] = useState(0)
   useEffect(() => {
-    const timer = setInterval(() => setSeconds(elapsedSeconds(draft.started_at)), 1000)
+    if (paused) return
+    const timer = setInterval(() => tick((n) => n + 1), 1000)
     return () => clearInterval(timer)
-  }, [draft.started_at])
+  }, [paused])
+  const seconds = activeSeconds(draft)
 
   return (
-    <header className="mb-6 flex items-baseline justify-between gap-4">
-      <h1 className="truncate text-2xl font-semibold tracking-tight">{draft.workout_type}</h1>
-      <span className="shrink-0 text-2xl tabular text-accent">{formatDuration(seconds)}</span>
+    <header className="mb-6 flex items-center justify-between gap-3">
+      <h1 className="min-w-0 flex-1 truncate text-2xl font-semibold tracking-tight">
+        {draft.workout_type}
+      </h1>
+      <span
+        className={`shrink-0 text-2xl tabular ${paused ? 'text-content-faint' : 'text-accent'}`}
+      >
+        {formatDuration(seconds)}
+      </span>
+      <Button
+        className="shrink-0"
+        variant={paused ? 'primary' : 'ghost'}
+        aria-pressed={paused}
+        onClick={() => onChange(paused ? resumeDraft(draft) : pauseDraft(draft))}
+      >
+        {paused ? 'Resume' : 'Pause'}
+      </Button>
     </header>
   )
 }

@@ -520,6 +520,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workouts/{workout_id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause Workout
+         * @description Haelt die Uhr an, ohne die Einheit zu beenden.
+         *
+         *     Gedacht fuer alles, was zwischen den Saetzen dazwischenkommt und keine
+         *     Trainingszeit ist: ein Anruf, ein belegtes Geraet, oder ein Fehler beim
+         *     Speichern, der das Beenden verzoegert. Die Einheit bleibt offen, nur die
+         *     gemessene Dauer waechst nicht weiter.
+         */
+        post: operations["pause_workout_api_v1_workouts__workout_id__pause_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workouts/{workout_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Workout
+         * @description Setzt die pausierte Einheit fort und laesst die Uhr weiterlaufen.
+         */
+        post: operations["resume_workout_api_v1_workouts__workout_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -918,6 +963,13 @@ export interface components {
             started_at?: string | null;
             /** Finished At */
             finished_at?: string | null;
+            /**
+             * Paused Seconds
+             * @default 0
+             */
+            paused_seconds: number;
+            /** Paused At */
+            paused_at?: string | null;
             /** Workout Plan Id */
             workout_plan_id: number;
             /** Training Day Id */
@@ -1053,6 +1105,13 @@ export interface components {
             started_at?: string | null;
             /** Finished At */
             finished_at?: string | null;
+            /**
+             * Paused Seconds
+             * @default 0
+             */
+            paused_seconds: number;
+            /** Paused At */
+            paused_at?: string | null;
             /** Id */
             id: number;
             /** Workout Plan Id */
@@ -1069,6 +1128,8 @@ export interface components {
             /**
              * Duration Seconds
              * @description Abgeleitet, nicht gespeichert - None solange die Einheit laeuft.
+             *
+             *     Ohne Pausen: was zaehlt, ist die trainierte Zeit.
              */
             readonly duration_seconds: number | null;
             /**
@@ -1079,9 +1140,15 @@ export interface components {
             /**
              * Is Running
              * @description True zwischen /start und /finish - das Frontend zeigt dann die
-             *     laufende Uhr statt der Enddauer.
+             *     laufende Uhr statt der Enddauer. Auch waehrend einer Pause: die
+             *     Einheit ist offen, nur die Uhr steht.
              */
             readonly is_running: boolean;
+            /**
+             * Is Paused
+             * @description True zwischen /pause und /resume - das Frontend haelt die Uhr an.
+             */
+            readonly is_paused: boolean;
         };
         /**
          * WorkoutSync
@@ -1119,6 +1186,11 @@ export interface components {
              * Format: date-time
              */
             finished_at: string;
+            /**
+             * Paused Seconds
+             * @default 0
+             */
+            paused_seconds: number;
             /**
              * Sets
              * @default []
@@ -1158,6 +1230,10 @@ export interface components {
             started_at?: string | null;
             /** Finished At */
             finished_at?: string | null;
+            /** Paused Seconds */
+            paused_seconds?: number | null;
+            /** Paused At */
+            paused_at?: string | null;
             /** Training Day Id */
             training_day_id?: number | null;
         };
@@ -1185,6 +1261,13 @@ export interface components {
             started_at?: string | null;
             /** Finished At */
             finished_at?: string | null;
+            /**
+             * Paused Seconds
+             * @default 0
+             */
+            paused_seconds: number;
+            /** Paused At */
+            paused_at?: string | null;
             /** Id */
             id: number;
             /** Workout Plan Id */
@@ -1206,6 +1289,8 @@ export interface components {
             /**
              * Duration Seconds
              * @description Abgeleitet, nicht gespeichert - None solange die Einheit laeuft.
+             *
+             *     Ohne Pausen: was zaehlt, ist die trainierte Zeit.
              */
             readonly duration_seconds: number | null;
             /**
@@ -1216,9 +1301,15 @@ export interface components {
             /**
              * Is Running
              * @description True zwischen /start und /finish - das Frontend zeigt dann die
-             *     laufende Uhr statt der Enddauer.
+             *     laufende Uhr statt der Enddauer. Auch waehrend einer Pause: die
+             *     Einheit ist offen, nur die Uhr steht.
              */
             readonly is_running: boolean;
+            /**
+             * Is Paused
+             * @description True zwischen /pause und /resume - das Frontend haelt die Uhr an.
+             */
+            readonly is_paused: boolean;
         };
     };
     responses: never;
@@ -2566,6 +2657,68 @@ export interface operations {
         };
     };
     finish_workout_api_v1_workouts__workout_id__finish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workout_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkoutPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pause_workout_api_v1_workouts__workout_id__pause_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workout_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkoutPublic"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_workout_api_v1_workouts__workout_id__resume_post: {
         parameters: {
             query?: never;
             header?: never;
